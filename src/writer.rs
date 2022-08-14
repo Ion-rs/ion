@@ -6,12 +6,15 @@ use std::{
 
 pub type WriteResult = io::Result<usize>;
 
-pub struct Writer<W: Write> {
-    writer: Box<W>,
+pub struct Writer<W> {
+    writer: W,
 }
 
-impl<W: Write> Writer<W> {
-    pub fn new(w: Box<W>) -> Writer<W> {
+impl<W> Writer<W>
+where
+    W: Write,
+{
+    pub fn new(w: W) -> Writer<W> {
         Writer { writer: w }
     }
 

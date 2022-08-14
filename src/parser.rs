@@ -3,6 +3,9 @@ use std::collections::BTreeMap;
 use std::iter::Peekable;
 use std::{error, fmt, str};
 
+type ParseResultOpt<T> = Result<Option<T>, ParserError>;
+type ParseResult<T> = Result<T, ParserError>;
+
 #[derive(Debug, PartialEq)]
 pub enum Element {
     Section(String),
@@ -14,17 +17,17 @@ pub enum Element {
 pub struct Parser<'a> {
     input: &'a str,
     cur: Peekable<str::CharIndices<'a>>,
-    pub errors: Vec<ParserError>,
     accepted_sections: Option<Vec<&'a str>>,
     section_capacity: usize,
     row_capacity: usize,
     array_capacity: usize,
+    last_section: Option<Box<str>>,
 }
 
 impl<'a> Iterator for Parser<'a> {
-    type Item = Element;
+    type Item = Result<Element, ParserError>;
 
-    fn next(&mut self) -> Option<Element> {
+    fn next(&mut self) -> Option<Self::Item> {
         let mut is_section_accepted = true;
         loop {
             self.ws();
@@ -38,9 +41,9 @@ impl<'a> Iterator for Parser<'a> {
             };
 
             if c == '[' {
-                let name = self.section_name();
-                match self.is_section_accepted(&name) {
-                    Some(true) => return Some(Element::Section(name)),
+                let section_name = self.section_name();
+                match self.is_section_accepted(&section_name) {
+                    Some(true) => return Some(Ok(Element::Section(section_name))),
                     Some(false) => is_section_accepted = false,
                     None => return None,
                 };
@@ -49,22 +52,23 @@ impl<'a> Iterator for Parser<'a> {
                 self.skip_line();
                 continue;
             }
+
             return match c {
-                '|' => self.row(),
-                '#' => self.comment(),
-                _ => self.entry(),
+                '|' => self.row().map(Ok),
+                '#' => self.comment().map(Ok),
+                _ => self.entry().transpose(),
             };
         }
     }
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(s: &'a str) -> Parser<'a> {
-        Self::new_filtered_opt(s, None)
+    pub fn new(input: &'a str) -> Parser<'a> {
+        Self::new_filtered_opt(input, None)
     }
 
-    pub fn new_filtered(s: &'a str, accepted_sections: Vec<&'a str>) -> Parser<'a> {
-        Self::new_filtered_opt(s, Some(accepted_sections))
+    pub fn new_filtered(input: &'a str, accepted_sections: Vec<&'a str>) -> Parser<'a> {
+        Self::new_filtered_opt(input, Some(accepted_sections))
     }
 
     pub fn with_section_capacity(mut self, section_capacity: usize) -> Self {
@@ -82,18 +86,54 @@ impl<'a> Parser<'a> {
         self
     }
 
-    fn new_filtered_opt(s: &'a str, accepted_sections: Option<Vec<&'a str>>) -> Parser<'a> {
+    fn new_filtered_opt(input: &'a str, accepted_sections: Option<Vec<&'a str>>) -> Parser<'a> {
         Parser {
-            input: s,
-            cur: s.char_indices().peekable(),
-            errors: Vec::new(),
+            input,
+            cur: input.char_indices().peekable(),
             accepted_sections,
             section_capacity: 16,
             row_capacity: 8,
             array_capacity: 2,
+            last_section: None,
         }
     }
 
+    pub fn read(&mut self) -> ParseResult<BTreeMap<String, Section>> {
+        let mut map = BTreeMap::new();
+
+        let mut cur_section = Section::with_capacity(self.section_capacity);
+        let mut last_name = None;
+
+        while let Some(element) = self.next().transpose()? {
+            match element {
+                Element::Section(name) => {
+                    if let Some(last_name) = last_name {
+                        map.insert(last_name, cur_section);
+                    }
+                    last_name = Some(name);
+                    cur_section = Section::with_capacity(self.section_capacity);
+                }
+                Element::Row(row) => cur_section.rows.push(row),
+                Element::Entry(key, value) => {
+                    cur_section.dictionary.insert(key, value);
+                }
+                _ => continue,
+            };
+        }
+
+        match last_name {
+            Some(name) => map.insert(name, cur_section),
+            None if self.accepted_sections.is_none() => {
+                map.insert(Section::DEFAULT_NAME.to_string(), cur_section)
+            }
+            _ => None,
+        };
+
+        Ok(map)
+    }
+
+    /// Peeks and checks if the next chars are like `'\t'` or `' '` then read them.
+    /// Stops after first other char
     fn ws(&mut self) {
         while let Some((_, '\t')) | Some((_, ' ')) = self.cur.peek() {
             self.cur.next();
@@ -133,7 +173,7 @@ impl<'a> Parser<'a> {
         }
 
         Some(Element::Comment(
-            self.slice_to_inc('\n').unwrap_or("").to_string(),
+            self.slice_to_inc('\n').unwrap_or("").into(),
         ))
     }
 
@@ -150,28 +190,18 @@ impl<'a> Parser<'a> {
     fn section_name(&mut self) -> String {
         self.eat('[');
         self.ws();
-        self.cur
+
+        let retval = self
+            .cur
             .by_ref()
             .map(|(_, c)| c)
             .take_while(|c| *c != ']')
-            .collect()
+            .collect::<String>();
+        self.last_section = Some(retval.clone().into());
+        retval
     }
 
-    fn entry(&mut self) -> Option<Element> {
-        let key = self.key_name()?;
-        if !self.keyval_sep() {
-            return None;
-        }
-
-        self.value().map(|val| Element::Entry(key, val))
-    }
-
-    fn key_name(&mut self) -> Option<String> {
-        self.slice_while(|ch| matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-'))
-            .map(str::to_owned)
-    }
-
-    fn value(&mut self) -> Option<Value> {
+    fn value(&mut self) -> ParseResultOpt<Value> {
         self.ws();
         self.newline();
         self.ws();
@@ -185,14 +215,20 @@ impl<'a> Parser<'a> {
                 let pos = *pos;
                 self.boolean(pos)
             }
-            _ => {
-                self.add_error("Cannot read a value");
-                None
-            }
+            _ => Err(self.create_error("Cannot read a value")),
         }
     }
 
-    fn finish_array(&mut self) -> Option<Value> {
+    fn finish_string(&mut self) -> ParseResultOpt<Value> {
+        self.cur.next();
+
+        self.slice_to_exc('"')
+            .map(|v| Value::String(v.to_string()))
+            .ok_or_else(|| self.create_error("Cannot finish string"))
+            .map(Some)
+    }
+
+    fn finish_array(&mut self) -> ParseResultOpt<Value> {
         self.cur.next();
         let mut row = Vec::with_capacity(self.array_capacity);
 
@@ -202,26 +238,26 @@ impl<'a> Parser<'a> {
                 match ch {
                     ']' => {
                         self.cur.next();
-                        return Some(Value::Array(row));
+                        return Ok(Some(Value::Array(row)));
                     }
                     ',' => {
                         self.cur.next();
                         continue;
                     }
-                    _ => match self.value() {
+                    _ => match self.value()? {
                         Some(v) => row.push(v),
                         None => break,
                     },
                 }
             } else {
-                self.add_error("Cannot finish an array");
                 break;
             }
         }
-        None
+
+        Err(self.create_error("Cannot finish an array"))
     }
 
-    fn finish_dictionary(&mut self) -> Option<Value> {
+    fn finish_dictionary(&mut self) -> ParseResultOpt<Value> {
         self.cur.next();
         let mut map = BTreeMap::new();
 
@@ -231,7 +267,7 @@ impl<'a> Parser<'a> {
                 match ch {
                     '}' => {
                         self.cur.next();
-                        return Some(Value::Dictionary(map));
+                        return Ok(Some(Value::Dictionary(map)));
                     }
                     ',' => {
                         self.cur.next();
@@ -242,69 +278,38 @@ impl<'a> Parser<'a> {
                         continue;
                     }
                     _ => {
-                        match self.entry() {
-                            Some(Element::Entry(k, v)) => map.insert(k, v),
-                            None => break,
-                            _ => panic!("Element::Entry expected"),
-                        };
+                        if let Some(Element::Entry(k, v)) = self.entry()? {
+                            map.insert(k, v);
+                        } else {
+                            return Err(self.create_error("Wrong entry of a dictionary"));
+                        }
                     }
                 }
             } else {
-                self.add_error("Cannot finish a dictionary");
                 break;
             }
         }
-        None
+
+        Err(self.create_error("Cannot finish a dictionary"))
     }
 
-    fn number(&mut self) -> Option<Value> {
-        let mut is_float = false;
-        let prefix = self.integer()?;
-        let decimal = if self.eat('.') {
-            is_float = true;
-            Some(self.integer())?
+    fn entry(&mut self) -> ParseResultOpt<Element> {
+        let key = if let Some(key) = self.key_name() {
+            key
         } else {
-            None
+            return Ok(None);
         };
 
-        let input = match decimal {
-            Some(ref decimal) => prefix + "." + decimal,
-            None => prefix,
-        };
-
-        if is_float {
-            input.parse().ok().map(Value::Float)
-        } else {
-            input.parse().ok().map(Value::Integer)
+        if !self.keyval_sep() {
+            return Err(self.create_error("Expected the '=' key value separator"));
         }
+
+        self.value()
+            .map(|val| val.map(|v| Element::Entry(key.to_string(), v)))
     }
 
-    fn integer(&mut self) -> Option<String> {
-        self.slice_while(|ch| matches!(ch, '0'..='9'))
-            .map(str::to_owned)
-    }
-
-    fn boolean(&mut self, start: usize) -> Option<Value> {
-        let rest = &self.input[start..];
-
-        if rest.starts_with("true") {
-            for _ in 0..4 {
-                self.cur.next();
-            }
-            Some(Value::Boolean(true))
-        } else if rest.starts_with("false") {
-            for _ in 0..5 {
-                self.cur.next();
-            }
-            Some(Value::Boolean(false))
-        } else {
-            None
-        }
-    }
-
-    fn finish_string(&mut self) -> Option<Value> {
-        self.cur.next();
-        self.slice_to_exc('"').map(|s| Value::String(s.to_string()))
+    fn key_name(&mut self) -> Option<&'a str> {
+        self.slice_while(|ch| matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-'))
     }
 
     fn keyval_sep(&mut self) -> bool {
@@ -314,6 +319,57 @@ impl<'a> Parser<'a> {
         }
         self.ws();
         true
+    }
+
+    fn number(&mut self) -> ParseResultOpt<Value> {
+        let mut is_float = false;
+        let prefix = if let Some(prefix) = self.integer() {
+            prefix
+        } else {
+            return Ok(None);
+        };
+        let decimal = if self.eat('.') {
+            is_float = true;
+            self.integer()
+        } else {
+            None
+        };
+
+        if is_float {
+            format!("{}.{}", prefix, decimal.unwrap_or(""))
+                .parse::<f64>()
+                .map(Into::into)
+                .map(Some)
+                .map_err(|e| self.create_error(e.to_string()))
+        } else {
+            prefix
+                .parse::<i64>()
+                .map(Into::into)
+                .map(Some)
+                .map_err(|e| self.create_error(e.to_string()))
+        }
+    }
+
+    fn integer(&mut self) -> Option<&'a str> {
+        self.slice_while(|ch| matches!(ch, '0'..='9'))
+    }
+
+    fn boolean(&mut self, start: usize) -> ParseResultOpt<Value> {
+        let rest = &self.input[start..];
+
+        if rest.starts_with("true") {
+            for _ in 0..4 {
+                self.cur.next();
+            }
+            Ok(Some(Value::Boolean(true)))
+        } else if rest.starts_with("false") {
+            for _ in 0..5 {
+                self.cur.next();
+            }
+            Ok(Some(Value::Boolean(false)))
+        } else {
+            Ok(None)
+        }
     }
 
     fn expect(&mut self, ch: char) -> bool {
@@ -350,38 +406,6 @@ impl<'a> Parser<'a> {
             .to_owned()
     }
 
-    pub fn read(&mut self) -> Option<BTreeMap<String, Section>> {
-        let mut map = BTreeMap::new();
-
-        let mut section = Section::with_capacity(self.section_capacity);
-        let mut name = None;
-
-        while let Some(el) = self.next() {
-            match el {
-                Element::Section(n) => {
-                    if let Some(name) = name {
-                        map.insert(name, section);
-                    }
-                    name = Some(n);
-                    section = Section::with_capacity(self.section_capacity);
-                }
-                Element::Row(row) => section.rows.push(row),
-                Element::Entry(key, value) => {
-                    section.dictionary.insert(key, value);
-                }
-                _ => continue,
-            };
-        }
-
-        match name {
-            Some(name) => map.insert(name, section),
-            None if self.accepted_sections.is_none() => map.insert("root".to_string(), section),
-            _ => None,
-        };
-
-        self.errors.is_empty().then_some(map)
-    }
-
     fn is_section_accepted(&mut self, name: &str) -> Option<bool> {
         let sections = match self.accepted_sections {
             Some(ref mut sections) => sections,
@@ -405,7 +429,7 @@ impl<'a> Parser<'a> {
     // Examples:
     // Parser::new("foObar").slice_to_inc('b') == Some("foOb"), self.cur.next() == (4, 'a')
     // Parser::new("foObar").slice_to_inc('f') == Some("f"),    self.cur.next() == (1, 'o')
-    fn slice_to_inc(&mut self, ch: char) -> Option<&str> {
+    fn slice_to_inc(&mut self, ch: char) -> Option<&'a str> {
         self.cur.next().map(|(start, c)| {
             if c == ch {
                 &self.input[start..=start]
@@ -423,7 +447,7 @@ impl<'a> Parser<'a> {
     // Examples:
     // Parser::new("foObar").slice_to_exc('b') == Some("foO"), self.cur.next() == (4, 'a')
     // Parser::new("foObar").slice_to_exc('f') == None,        self.cur.next() == (1, 'o')
-    fn slice_to_exc(&mut self, ch: char) -> Option<&str> {
+    fn slice_to_exc(&mut self, ch: char) -> Option<&'a str> {
         self.cur.next().map(|(start, c)| {
             if c == ch {
                 ""
@@ -441,7 +465,7 @@ impl<'a> Parser<'a> {
     // Examples:
     // Parser::new("foObar").slice_while(|c| c != 'b') == Some("foO"), self.cur.next() == (3, 'b')
     // Parser::new("foObar").slice_while(|c| c != 'f') == None,        self.cur.next() == (0, 'f')
-    fn slice_while(&mut self, predicate: impl Fn(char) -> bool) -> Option<&str> {
+    fn slice_while(&mut self, predicate: impl Fn(char) -> bool) -> Option<&'a str> {
         self.cur.peek().cloned().and_then(|(start, c)| {
             if !predicate(c) {
                 None
@@ -461,16 +485,17 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn add_error(&mut self, message: &str) {
-        let mut it = self.cur.clone();
-        let lo = it.next().map(|p| p.0).unwrap_or(self.input.len());
-        let hi = it.next().map(|p| p.0).unwrap_or(self.input.len());
-
-        self.errors.push(ParserError {
-            lo,
-            hi,
-            desc: message.to_owned(),
-        });
+    fn create_error<M>(&mut self, message: M) -> ParserError
+    where
+        M: Into<Box<str>>,
+    {
+        ParserError {
+            section: self
+                .last_section
+                .clone()
+                .unwrap_or_else(|| "unknown".into()),
+            desc: message.into(),
+        }
     }
 }
 
@@ -478,14 +503,10 @@ fn is_digit(c: char) -> bool {
     matches!(c, '0'..='9')
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParserError {
-    /// The low byte at which this error is pointing at.
-    pub lo: usize,
-    /// One byte beyond the last character at which this error is pointing at.
-    pub hi: usize,
-    /// A human-readable description explaining what the error is.
-    pub desc: String,
+    pub section: Box<str>,
+    pub desc: Box<str>,
 }
 
 impl error::Error for ParserError {
@@ -506,105 +527,206 @@ mod tests {
     use crate::{Dictionary, Parser, Section, Value};
     use std::collections::BTreeMap;
 
-    #[test]
-    fn finish_string() {
-        let mut p = Parser::new("\"foObar\"");
-        assert_eq!(Some("foObar"), p.finish_string().unwrap().as_str());
-
-        let mut p = Parser::new("\"foObar");
-        assert_eq!(Some("foObar"), p.finish_string().unwrap().as_str());
-
-        let mut p = Parser::new("\"\"");
-        assert_eq!(Some(""), p.finish_string().unwrap().as_str());
-
-        let mut p = Parser::new("");
-        assert_eq!(None, p.finish_string());
+    macro_rules! ext_ok_some {
+        ($target:expr) => {
+            $target
+                .expect("Expected Ok got Err")
+                .expect("Expected Some got None")
+        };
     }
 
-    #[test]
-    fn finish_array() {
-        let mut p = Parser::new("[\"a\"");
-        assert_eq!(None, p.finish_array());
-
-        let mut p = Parser::new("[");
-        assert_eq!(None, p.finish_array());
-
-        let mut p = Parser::new("[]");
-        assert_eq!(Some(Value::Array(vec![])), p.finish_array());
-
-        let mut p = Parser::new("[\"a\"]");
-        assert_eq!(Some(Value::new_string_array("a")), p.finish_array());
+    macro_rules! ext_err {
+        ($target:expr) => {
+            $target.expect_err("Expected Err got Ok")
+        };
     }
 
-    #[test]
-    fn finish_dictionary() {
-        let mut p = Parser::new("{");
-        assert_eq!(None, p.finish_dictionary());
+    macro_rules! target {
+        ($text:expr) => {
+            Parser::new($text)
+        };
+    }
 
-        let mut p = Parser::new("{ foo");
-        assert_eq!(None, p.finish_dictionary());
+    mod finish_string {
+        use super::*;
 
-        let mut p = Parser::new("{ foo = ");
-        assert_eq!(None, p.finish_dictionary());
+        #[test]
+        fn ok() {
+            let mut target = target!("\"foObar\"");
+            assert_eq!(
+                Some("foObar"),
+                ext_ok_some!(target.finish_string()).as_str()
+            );
 
-        let mut p = Parser::new("{ foo = \"bar\"");
-        assert_eq!(None, p.finish_dictionary());
+            let mut target = target!("\"foObar");
+            assert_eq!(
+                Some("foObar"),
+                ext_ok_some!(target.finish_string()).as_str()
+            );
 
-        let mut p = Parser::new("{ foo = [\"bar\"");
-        assert_eq!(None, p.finish_dictionary());
+            let mut target = target!("\"\"");
+            assert_eq!(Some(""), ext_ok_some!(target.finish_string()).as_str());
+        }
 
-        let mut p = Parser::new("{ foo = [\"bar\"]");
-        assert_eq!(None, p.finish_dictionary());
+        #[test]
+        fn err() {
+            let mut target = target!("\"");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Cannot finish string\" }",
+                ext_err!(target.finish_string()).to_string()
+            );
 
-        let mut p = Parser::new("{}");
-        assert_eq!(
-            Some(Value::Dictionary(Dictionary::new())),
-            p.finish_dictionary()
-        );
+            let mut target = target!("");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Cannot finish string\" }",
+                ext_err!(target.finish_string()).to_string()
+            );
+        }
+    }
 
-        let mut p = Parser::new("{ foo = [\"bar\"] }");
-        assert_eq!(
-            "{ foo = [ \"bar\" ] }",
-            p.finish_dictionary().map(|d| d.to_string()).unwrap()
-        );
+    mod finish_array {
+        use super::*;
+
+        #[test]
+        fn ok() {
+            let mut target = target!("[]");
+            assert_eq!(Value::Array(vec![]), ext_ok_some!(target.finish_array()));
+
+            let mut target = target!("[\"a\", 4, 5.6]");
+            assert_eq!(
+                Value::Array(vec!["a".into(), 4.into(), 5.6.into()]),
+                ext_ok_some!(target.finish_array())
+            );
+        }
+
+        #[test]
+        fn err() {
+            let mut target = target!("[\"a\"");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Cannot finish an array\" }",
+                ext_err!(target.finish_array()).to_string()
+            );
+
+            let mut target = target!("[");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Cannot finish an array\" }",
+                ext_err!(target.finish_array()).to_string()
+            );
+        }
+    }
+
+    mod finish_dictionary {
+        use super::*;
+
+        #[test]
+        fn ok() {
+            let mut target = target!("{}");
+            assert_eq!(
+                Value::Dictionary(Dictionary::new()),
+                ext_ok_some!(target.finish_dictionary())
+            );
+
+            let mut target = target!("{ foo = [\"bar\"] }");
+            assert_eq!(
+                "{ foo = [ \"bar\" ] }",
+                ext_ok_some!(target.finish_dictionary()).to_string()
+            );
+        }
+
+        #[test]
+        fn err() {
+            let mut target = target!("{");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Cannot finish a dictionary\" }",
+                ext_err!(target.finish_dictionary()).to_string()
+            );
+
+            let mut target = target!("{ foo");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Expected the '=' key value separator\" }",
+                ext_err!(target.finish_dictionary()).to_string()
+            );
+
+            let mut target = target!("{ foo = ");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Cannot read a value\" }",
+                ext_err!(target.finish_dictionary()).to_string()
+            );
+
+            let mut target = target!("{ foo = \"bar\"");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Cannot finish a dictionary\" }",
+                ext_err!(target.finish_dictionary()).to_string()
+            );
+
+            let mut target = target!("{ foo = [\"bar\"");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Cannot finish an array\" }",
+                ext_err!(target.finish_array()).to_string()
+            );
+
+            let mut target = target!("{ foo = [\"bar\"]");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Cannot finish a dictionary\" }",
+                ext_err!(target.finish_dictionary()).to_string()
+            );
+
+            let mut target = target!("{ | foo |");
+            assert_eq!(
+                "ParserError { section: \"unknown\", desc: \"Wrong entry of a dictionary\" }",
+                ext_err!(target.finish_dictionary()).to_string()
+            );
+        }
     }
 
     #[test]
     fn slice_to_inc() {
-        let mut p = Parser::new("foObar");
-        assert_eq!(Some("foOb"), p.slice_to_inc('b'));
-        assert_eq!(Some((4, 'a')), p.cur.next());
+        let mut target = target!("foObar");
+        assert_eq!(Some("foOb"), target.slice_to_inc('b'));
+        assert_eq!(Some((4, 'a')), target.cur.next());
 
-        let mut p = Parser::new("foObar");
-        assert_eq!(Some("f"), p.slice_to_inc('f'));
-        assert_eq!(Some((1, 'o')), p.cur.next());
+        let mut target = target!("foObar");
+        assert_eq!(Some("f"), target.slice_to_inc('f'));
+        assert_eq!(Some((1, 'o')), target.cur.next());
     }
 
     #[test]
     fn slice_to_exc() {
-        let mut p = Parser::new("foObar");
-        assert_eq!(Some("foO"), p.slice_to_exc('b'));
-        assert_eq!(Some((4, 'a')), p.cur.next());
+        let mut target = target!("foObar");
+        assert_eq!(Some("foO"), target.slice_to_exc('b'));
+        assert_eq!(Some((4, 'a')), target.cur.next());
 
-        let mut p = Parser::new("foObar");
-        assert_eq!(Some(""), p.slice_to_exc('f'));
-        assert_eq!(Some((1, 'o')), p.cur.next());
+        let mut target = target!("foObar");
+        assert_eq!(Some(""), target.slice_to_exc('f'));
+        assert_eq!(Some((1, 'o')), target.cur.next());
     }
 
     #[test]
     fn slice_while() {
-        let mut p = Parser::new("foObar");
-        assert_eq!(Some("foO"), p.slice_while(|c| c != 'b'));
-        assert_eq!(Some((3, 'b')), p.cur.next());
+        let mut target = target!("foObar");
+        assert_eq!(Some("foO"), target.slice_while(|c| c != 'b'));
+        assert_eq!(Some((3, 'b')), target.cur.next());
 
-        let mut p = Parser::new("foObar");
-        assert_eq!(None, p.slice_while(|c| c != 'f'));
-        assert_eq!(Some((0, 'f')), p.cur.next());
+        let mut target = target!("foObar");
+        assert_eq!(None, target.slice_while(|c| c != 'f'));
+        assert_eq!(Some((0, 'f')), target.cur.next());
     }
 
-    #[test]
-    fn parse() {
-        let raw = r#"
+    mod iterator {
+        use super::*;
+
+        macro_rules! next_some_ok {
+            ($target:expr) => {
+                $target
+                    .next()
+                    .expect("Expected Some got None")
+                    .expect("Expected Ok got Err")
+            };
+        }
+
+        #[test]
+        fn next_returns() {
+            let raw = r#"
                 [dict]
                 first = "first"
                 # comment
@@ -630,116 +752,96 @@ mod tests {
                 | this |
             "#;
 
-        let mut p = Parser::new(raw);
+            let mut target = target!(raw);
 
-        assert_eq!(Some(Element::Section("dict".to_owned())), p.next());
-        assert_eq!(
-            Some(Element::Entry(
-                "first".to_owned(),
-                Value::String("first".to_owned())
-            )),
-            p.next()
-        );
-        assert_eq!(Some(Element::Comment(" comment\n".to_owned())), p.next());
-        assert_eq!(
-            Some(Element::Entry(
-                "second".to_owned(),
-                Value::String("another".to_owned())
-            )),
-            p.next()
-        );
-        assert_eq!(
-            Some(Element::Entry(
-                "whitespace".to_owned(),
-                Value::String("  ".to_owned())
-            )),
-            p.next()
-        );
-        assert_eq!(
-            Some(Element::Entry(
-                "empty".to_owned(),
-                Value::String("".to_owned())
-            )),
-            p.next()
-        );
-        assert_eq!(
-            Some(Element::Entry("some_bool".to_owned(), Value::Boolean(true))),
-            p.next()
-        );
-        assert_eq!(
-            Some(Element::Entry(
-                "ary".to_owned(),
-                Value::Array(vec![
-                    Value::String("col1".to_owned()),
-                    Value::Integer(2),
-                    Value::String("col3".to_owned()),
-                    Value::Boolean(false)
-                ])
-            )),
-            p.next()
-        );
+            assert_eq!(Element::Section("dict".to_owned()), next_some_ok!(target));
+            assert_eq!(
+                Element::Entry("first".to_owned(), Value::String("first".to_owned())),
+                next_some_ok!(target)
+            );
+            assert_eq!(Element::Comment(" comment\n".into()), next_some_ok!(target));
+            assert_eq!(
+                Element::Entry("second".to_owned(), Value::String("another".to_owned())),
+                next_some_ok!(target)
+            );
+            assert_eq!(
+                Element::Entry("whitespace".to_owned(), Value::String("  ".to_owned())),
+                next_some_ok!(target)
+            );
+            assert_eq!(
+                Element::Entry("empty".to_owned(), Value::String("".to_owned())),
+                next_some_ok!(target)
+            );
+            assert_eq!(
+                Element::Entry("some_bool".to_owned(), Value::Boolean(true)),
+                next_some_ok!(target)
+            );
+            assert_eq!(
+                Element::Entry(
+                    "ary".to_owned(),
+                    Value::Array(vec![
+                        Value::String("col1".to_owned()),
+                        Value::Integer(2),
+                        Value::String("col3".to_owned()),
+                        Value::Boolean(false)
+                    ])
+                ),
+                next_some_ok!(target)
+            );
 
-        assert_eq!(Some(Element::Section("table".to_owned())), p.next());
-        assert_eq!(
-            Some(Element::Row(vec![
-                Value::String("abc".to_owned()),
-                Value::String("def".to_owned())
-            ])),
-            p.next()
-        );
-        assert_eq!(
-            Some(Element::Row(vec![
-                Value::String("---".to_owned()),
-                Value::String("---".to_owned())
-            ])),
-            p.next()
-        );
-        assert_eq!(
-            Some(Element::Row(vec![
-                Value::String("one".to_owned()),
-                Value::String("two".to_owned())
-            ])),
-            p.next()
-        );
-        assert_eq!(Some(Element::Comment(" comment\n".to_owned())), p.next());
-        assert_eq!(
-            Some(Element::Row(vec![
-                Value::String("1".to_owned()),
-                Value::String("2".to_owned())
-            ])),
-            p.next()
-        );
-        assert_eq!(
-            Some(Element::Row(vec![
-                Value::String("2".to_owned()),
-                Value::String("3".to_owned())
-            ])),
-            p.next()
-        );
-        assert_eq!(Some(Element::Section("three".to_owned())), p.next());
-        assert_eq!(
-            Some(Element::Entry("a".to_owned(), Value::Integer(1))),
-            p.next()
-        );
-        assert_eq!(
-            Some(Element::Entry("B".to_owned(), Value::Integer(2))),
-            p.next()
-        );
-        assert_eq!(
-            Some(Element::Row(vec![Value::String("this".to_owned())])),
-            p.next()
-        );
-        assert_eq!(None, p.next());
-        assert_eq!(None, p.next());
-    }
-
-    #[test]
-    fn display() {
-        assert_eq!(format!("{}", Value::String("foo".to_owned())), "foo");
-        assert_eq!(format!("{}", Value::Integer(1)), "1");
-        assert_eq!(format!("{}", Value::Boolean(true)), "true");
-        let ary = Value::Array(vec![Value::Integer(1), Value::String("foo".to_owned())]);
-        assert_eq!(format!("{}", ary), "[ 1, \"foo\" ]");
+            assert_eq!(Element::Section("table".to_owned()), next_some_ok!(target));
+            assert_eq!(
+                Element::Row(vec![
+                    Value::String("abc".to_owned()),
+                    Value::String("def".to_owned())
+                ]),
+                next_some_ok!(target)
+            );
+            assert_eq!(
+                Element::Row(vec![
+                    Value::String("---".to_owned()),
+                    Value::String("---".to_owned())
+                ]),
+                next_some_ok!(target)
+            );
+            assert_eq!(
+                Element::Row(vec![
+                    Value::String("one".to_owned()),
+                    Value::String("two".to_owned())
+                ]),
+                next_some_ok!(target)
+            );
+            assert_eq!(Element::Comment(" comment\n".into()), next_some_ok!(target));
+            assert_eq!(
+                Element::Row(vec![
+                    Value::String("1".to_owned()),
+                    Value::String("2".to_owned())
+                ]),
+                next_some_ok!(target)
+            );
+            assert_eq!(
+                Element::Row(vec![
+                    Value::String("2".to_owned()),
+                    Value::String("3".to_owned())
+                ]),
+                next_some_ok!(target)
+            );
+            assert_eq!(Element::Section("three".to_owned()), next_some_ok!(target));
+            assert_eq!(
+                Element::Entry("a".to_owned(), Value::Integer(1)),
+                next_some_ok!(target)
+            );
+            assert_eq!(
+                Element::Entry("B".to_owned(), Value::Integer(2)),
+                next_some_ok!(target)
+            );
+            assert_eq!(
+                Element::Row(vec![Value::String("this".to_owned())]),
+                next_some_ok!(target)
+            );
+            assert_eq!(None, target.next());
+            assert_eq!(None, target.next());
+        }
     }
 
     mod read {
@@ -759,9 +861,9 @@ mod tests {
                         let raw = r#"
                             foo = "bar"
                         "#;
-                        let mut p = Parser::new(raw);
+                        let mut target = target!(raw);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();
@@ -781,9 +883,9 @@ mod tests {
                         let raw = r#"
                             arr = ["WAW", "WRO"]
                         "#;
-                        let mut p = Parser::new(raw);
+                        let mut target = target!(raw);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();
@@ -807,9 +909,9 @@ mod tests {
                         let raw = r#"
                             ndict = { foo = "bar" }
                         "#;
-                        let mut p = Parser::new(raw);
+                        let mut target = target!(raw);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();
@@ -834,9 +936,9 @@ mod tests {
                             loc  = ["M", "B"]
                             dist = { beach_km = 4.1 }
                         }"#;
-                        let mut p = Parser::new(raw);
+                        let mut target = target!(raw);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut sect = Section::new();
@@ -855,7 +957,7 @@ mod tests {
                     }
                 }
 
-                mod and_root_section_has_dictionary_with_dictionary_with_no_value {
+                mod and_root_section_has_dictionary_with_field_without_value {
                     use super::*;
 
                     #[test]
@@ -863,11 +965,13 @@ mod tests {
                         let raw = r#"
                             key =
                         "#;
-                        let mut p = Parser::new(raw);
+                        let mut target = target!(raw);
+                        let actual = ext_err!(target.read());
 
-                        let actual = p.read();
-
-                        assert_eq!(None, actual);
+                        assert_eq!(
+                            "ParserError { section: \"unknown\", desc: \"Cannot read a value\" }",
+                            actual.to_string()
+                        );
                     }
                 }
 
@@ -880,9 +984,9 @@ mod tests {
                             |1|2|
                             |3|
                         "#;
-                        let mut p = Parser::new(raw);
+                        let mut target = target!(raw);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut sect = Section::new();
@@ -905,9 +1009,9 @@ mod tests {
                             |1||2|
                             |3|   |
                         "#;
-                        let mut p = Parser::new(raw);
+                        let mut target = target!(raw);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut sect = Section::new();
@@ -960,8 +1064,8 @@ mod tests {
                             map
                         };
 
-                        let mut p = Parser::new(raw);
-                        assert_eq!(expected, p.read().unwrap());
+                        let mut target = target!(raw);
+                        assert_eq!(expected, target.read().unwrap());
                     }
                 }
 
@@ -978,9 +1082,9 @@ mod tests {
                             2key = "2value"
                             | 2col1 | 2col2|
                         "#;
-                        let mut p = Parser::new(raw);
+                        let mut target = target!(raw);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();
@@ -1013,9 +1117,9 @@ mod tests {
                             nkey = "nvalue"
                             | ncol1 | ncol2 |
                         "#;
-                        let mut p = Parser::new_filtered(raw, vec!["ACCEPTED"]);
+                        let mut target = Parser::new_filtered(raw, vec!["ACCEPTED"]);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let expected = BTreeMap::new();
                         assert_eq!(expected, actual);
@@ -1034,9 +1138,9 @@ mod tests {
                             key = "value"
                             | col1 | col2|
                         "#;
-                        let mut p = Parser::new_filtered(raw, vec!["ACCEPTED"]);
+                        let mut target = Parser::new_filtered(raw, vec!["ACCEPTED"]);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();
@@ -1064,9 +1168,9 @@ mod tests {
                             key = "value"
                             | col1 | col2|
                         "#;
-                        let mut p = Parser::new_filtered(raw, vec!["ACCEPTED"]);
+                        let mut target = Parser::new_filtered(raw, vec!["ACCEPTED"]);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let expected = BTreeMap::new();
                         assert_eq!(expected, actual);
@@ -1087,9 +1191,9 @@ mod tests {
                             key = "value"
                             | col1 | col2|
                         "#;
-                        let mut p = Parser::new_filtered(raw, vec!["ACCEPTED"]);
+                        let mut target = Parser::new_filtered(raw, vec!["ACCEPTED"]);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();
@@ -1118,9 +1222,9 @@ mod tests {
                             fkey = "fvalue"
                             | fcol1 | fcol2|
                         "#;
-                        let mut p = Parser::new_filtered(raw, vec!["ACCEPTED"]);
+                        let mut target = Parser::new_filtered(raw, vec!["ACCEPTED"]);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();
@@ -1152,9 +1256,9 @@ mod tests {
                                 2key = "2value"
                                 | 2col1 | 2col2|
                             "#;
-                            let mut p = Parser::new_filtered(raw, vec!["ACCEPTED"]);
+                            let mut target = Parser::new_filtered(raw, vec!["ACCEPTED"]);
 
-                            let actual = p.read().expect("Read failed");
+                            let actual = target.read().expect("Read failed");
 
                             let mut expected = BTreeMap::new();
                             let mut section = Section::new();
@@ -1183,9 +1287,9 @@ mod tests {
                                 2key = "2value"
                                 | 2col1 | 2col2|
                             "#;
-                            let mut p = Parser::new_filtered(raw, vec!["ACCEPTED", "ANOTHER"]);
+                            let mut target = Parser::new_filtered(raw, vec!["ACCEPTED", "ANOTHER"]);
 
-                            let actual = p.read().expect("Read failed");
+                            let actual = target.read().expect("Read failed");
 
                             let mut expected = BTreeMap::new();
                             let mut section = Section::new();
@@ -1216,9 +1320,9 @@ mod tests {
                             key = "value"
                             | col1 | col2|
                         "#;
-                        let mut p = Parser::new_filtered(raw, vec!["ACCEPTED"]);
+                        let mut target = Parser::new_filtered(raw, vec!["ACCEPTED"]);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let expected = BTreeMap::new();
                         assert_eq!(expected, actual);
@@ -1238,9 +1342,9 @@ mod tests {
                             key = "value"
                             | col1 | col2|
                         "#;
-                        let mut p = Parser::new_filtered(raw, vec!["ACCEPTED"]);
+                        let mut target = Parser::new_filtered(raw, vec!["ACCEPTED"]);
 
-                        let actual = p.read().expect("Read failed");
+                        let actual = target.read().expect("Read failed");
 
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();

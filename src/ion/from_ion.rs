@@ -2,11 +2,13 @@ use crate::ion::Value;
 
 pub trait FromIon<T>: Sized {
     type Err;
+
     fn from_ion(_: &T) -> Result<Self, Self::Err>;
 }
 
 impl FromIon<Value> for String {
     type Err = ();
+
     fn from_ion(value: &Value) -> Result<Self, Self::Err> {
         value.as_string().map(|s| s.to_owned()).ok_or(())
     }
@@ -14,6 +16,7 @@ impl FromIon<Value> for String {
 
 impl FromIon<Value> for Option<String> {
     type Err = ();
+
     fn from_ion(value: &Value) -> Result<Self, Self::Err> {
         value
             .as_string()

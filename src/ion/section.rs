@@ -14,6 +14,8 @@ impl Default for Section {
 }
 
 impl Section {
+    pub const DEFAULT_NAME: &'static str = "root";
+
     pub fn new() -> Section {
         Self::with_capacity(1)
     }
@@ -32,7 +34,7 @@ impl Section {
     /// like get, only returns a `Result`
     pub fn fetch(&self, key: &str) -> Result<&Value, IonError> {
         self.get(key)
-            .ok_or_else(|| IonError::MissingValue(key.to_owned()))
+            .ok_or_else(|| IonError::MissingValue(key.into()))
     }
 
     pub fn rows_without_header(&self) -> &[Row] {

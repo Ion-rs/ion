@@ -3,8 +3,6 @@ use crate::{ion::Value, Row};
 pub trait FromRow: Sized {
     type Err;
     fn from_str_iter<'a, I: Iterator<Item = &'a Value>>(row: I) -> Result<Self, Self::Err>;
-
-    // fn from_row(row: &Row) -> Result<Self, Self::Err>;
 }
 
 pub trait ParseRow: Sized {
