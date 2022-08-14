@@ -113,7 +113,49 @@ impl FromStr for Value {
     type Err = IonError;
 
     fn from_str(s: &str) -> Result<Value, IonError> {
-        Ok(Value::String(s.to_owned()))
+        Ok(Self::String(s.to_owned()))
+    }
+}
+
+impl From<String> for Value {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<&'_ str> for Value {
+    fn from(value: &'_ str) -> Self {
+        Self::String(value.to_string())
+    }
+}
+
+impl From<i64> for Value {
+    fn from(value: i64) -> Self {
+        Self::Integer(value)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Self::Float(value)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        Self::Boolean(value)
+    }
+}
+
+impl From<Row> for Value {
+    fn from(value: Row) -> Self {
+        Self::Array(value)
+    }
+}
+
+impl From<Dictionary> for Value {
+    fn from(value: Dictionary) -> Self {
+        Self::Dictionary(value)
     }
 }
 
@@ -131,5 +173,14 @@ mod tests {
     fn float() {
         let v: Value = "4.0".parse().unwrap();
         assert_eq!(4.0f64, v.parse().unwrap());
+    }
+
+    #[test]
+    fn display() {
+        assert_eq!(format!("{}", Value::String("foo".to_owned())), "foo");
+        assert_eq!(format!("{}", Value::Integer(1)), "1");
+        assert_eq!(format!("{}", Value::Boolean(true)), "true");
+        let ary = Value::Array(vec![Value::Integer(1), Value::String("foo".to_owned())]);
+        assert_eq!(format!("{}", ary), "[ 1, \"foo\" ]");
     }
 }

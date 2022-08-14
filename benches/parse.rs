@@ -4,35 +4,33 @@ extern crate ion;
 extern crate test;
 
 use ion::{Ion, Parser};
-use test::{Bencher, black_box};
+use test::{black_box, Bencher};
 
-const DEF_HOTEL_ON_START: &str = include_str!("data/def_hotel_on_start.ion");
-const DEF_HOTEL_ON_END: &str = include_str!("data/def_hotel_on_end.ion");
+// all these files have the same number of section and lines.
+// they differ by the location of the section in the file only.
+const CONTRACT_AND_DEF_HOTEL_ON_START: &str =
+    include_str!("../tests/data/contract_and_def_hotel_on_start.ion");
+const CONTRACT_ON_START_DEF_HOTEL_ON_END: &str =
+    include_str!("../tests/data/contract_on_start_def_hotel_on_end.ion");
+const CONTRACT_AND_DEF_HOTEL_ON_END: &str =
+    include_str!("../tests/data/contract_and_def_hotel_on_end.ion");
 
 mod parse {
     use super::*;
     use std::str::FromStr;
 
     #[bench]
-    fn section_on_start_of_ion(bencher: &mut Bencher) {
+    fn contract_and_def_hotel_on_start(bencher: &mut Bencher) {
         bencher.iter(|| {
-            let result = Ion::from_str(DEF_HOTEL_ON_START);
+            let result = Ion::from_str(CONTRACT_AND_DEF_HOTEL_ON_START);
             black_box(result.unwrap())
         })
     }
 
     #[bench]
-    fn section_on_end_of_ion(bencher: &mut Bencher) {
+    fn contract_and_def_hotel_on_start_and_tuned_parser(bencher: &mut Bencher) {
         bencher.iter(|| {
-            let result = Ion::from_str(DEF_HOTEL_ON_END);
-            black_box(result.unwrap())
-        })
-    }
-
-    #[bench]
-    fn section_on_start_of_ion_tuned_parser(bencher: &mut Bencher) {
-        bencher.iter(|| {
-            let result = Parser::new(DEF_HOTEL_ON_START)
+            let result = Parser::new(CONTRACT_AND_DEF_HOTEL_ON_START)
                 .with_row_capacity(12)
                 .with_array_capacity(4)
                 .with_section_capacity(1024)
@@ -43,9 +41,9 @@ mod parse {
     }
 
     #[bench]
-    fn section_on_start_of_ion_parser_no_prealloc(bencher: &mut Bencher) {
+    fn contract_and_def_hotel_on_start_and_no_prealloc(bencher: &mut Bencher) {
         bencher.iter(|| {
-            let result = Parser::new(DEF_HOTEL_ON_START)
+            let result = Parser::new(CONTRACT_AND_DEF_HOTEL_ON_START)
                 .with_row_capacity(0)
                 .with_array_capacity(0)
                 .with_section_capacity(0)
@@ -55,57 +53,42 @@ mod parse {
         })
     }
 
-    #[bench]
-    fn section_on_end_of_ion_tuned_parser(bencher: &mut Bencher) {
-        bencher.iter(|| {
-            let result = Parser::new(DEF_HOTEL_ON_END)
-                .with_row_capacity(12)
-                .with_array_capacity(4)
-                .with_section_capacity(1024)
-                .read();
+    mod when_filtering {
+        use super::*;
 
-            black_box(result.unwrap())
-        })
-    }
+        const FILTERED_SECTIONS: &[&str] = &["CONTRACT", "DEF.HOTEL"];
 
-    #[bench]
-    fn section_on_end_of_ion_parser_no_prealloc(bencher: &mut Bencher) {
-        bencher.iter(|| {
-            let result = Parser::new(DEF_HOTEL_ON_END)
-                .with_row_capacity(0)
-                .with_array_capacity(0)
-                .with_section_capacity(0)
-                .read();
+        #[bench]
+        fn contract_and_def_hotel_on_start(bencher: &mut Bencher) {
+            bencher.iter(|| {
+                let result = Ion::from_str_filtered(
+                    CONTRACT_AND_DEF_HOTEL_ON_START,
+                    FILTERED_SECTIONS.to_vec(),
+                );
+                black_box(result.unwrap())
+            })
+        }
 
-            black_box(result.unwrap())
-        })
-    }
-}
+        #[bench]
+        fn contract_on_start_def_hotel_on_end(bencher: &mut Bencher) {
+            bencher.iter(|| {
+                let result = Ion::from_str_filtered(
+                    CONTRACT_ON_START_DEF_HOTEL_ON_END,
+                    FILTERED_SECTIONS.to_vec(),
+                );
+                black_box(result.unwrap())
+            })
+        }
 
-mod parse_filtered {
-    use super::*;
-
-    const FILTERED_SECTIONS: &[&str] = &["CONTRACT", "DEF.HOTEL"];
-
-    #[bench]
-    fn section_on_start_of_ion(bencher: &mut Bencher) {
-        bencher.iter(|| {
-            let result = Ion::from_str_filtered(DEF_HOTEL_ON_START, FILTERED_SECTIONS.to_vec());
-            black_box(result.unwrap())
-        })
-    }
-
-    #[bench]
-    fn section_on_end_of_ion(bencher: &mut Bencher) {
-        bencher.iter(|| {
-            let result = Ion::from_str_filtered(DEF_HOTEL_ON_END, FILTERED_SECTIONS.to_vec());
-            black_box(result.unwrap())
-        })
+        #[bench]
+        fn contract_and_def_hotel_on_end(bencher: &mut Bencher) {
+            bencher.iter(|| {
+                let result = Ion::from_str_filtered(
+                    CONTRACT_AND_DEF_HOTEL_ON_END,
+                    FILTERED_SECTIONS.to_vec(),
+                );
+                black_box(result.unwrap())
+            })
+        }
     }
 }
-
-
-//test parse::section_on_start_of_ion          ... bench:   4,187,092 ns/iter (+/- 125,166)
-//test parse::section_on_end_of_ion            ... bench:   4,223,583 ns/iter (+/- 155,651)
-//test parse_filtered::section_on_start_of_ion ... bench:      15,027 ns/iter (+/- 1,612)
-//test parse_filtered::section_on_end_of_ion   ... bench:     962,318 ns/iter (+/- 31,853)

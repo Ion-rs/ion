@@ -41,22 +41,31 @@ impl Ion {
         Ion { sections: map }
     }
 
-    pub fn from_str_filtered(s: &str, accepted_sections: Vec<&str>) -> Result<Self, IonError> {
-        parser_to_ion(Parser::new_filtered(s, accepted_sections))
+    pub fn from_str_filtered(text: &str, accepted_sections: Vec<&str>) -> Result<Self, IonError> {
+        parser_to_ion(Parser::new_filtered(text, accepted_sections))
     }
 
-    pub fn get(&self, key: &str) -> Option<&Section> {
-        self.sections.get(key)
+    pub fn get<K>(&self, key: K) -> Option<&Section>
+    where
+        K: AsRef<str>,
+    {
+        self.sections.get(key.as_ref())
     }
 
-    pub fn fetch(&self, key: &str) -> Result<&Section, IonError> {
-        self.get(key)
-            .ok_or_else(|| IonError::MissingSection(key.to_owned()))
+    pub fn fetch<K>(&self, key: K) -> Result<&Section, IonError>
+    where
+        K: AsRef<str>,
+    {
+        self.get(key.as_ref())
+            .ok_or_else(|| IonError::MissingSection(key.as_ref().into()))
     }
 
     /// Removes a `Section` from the ion structure and returning it
-    pub fn remove(&mut self, key: &str) -> Option<Section> {
-        self.sections.remove(key)
+    pub fn remove<K>(&mut self, key: K) -> Option<Section>
+    where
+        K: AsRef<str>,
+    {
+        self.sections.remove(key.as_ref())
     }
 
     pub fn iter(&self) -> ::std::collections::btree_map::Iter<String, Section> {
@@ -67,16 +76,13 @@ impl Ion {
 impl str::FromStr for Ion {
     type Err = IonError;
 
-    fn from_str(s: &str) -> Result<Ion, IonError> {
-        parser_to_ion(Parser::new(s))
+    fn from_str(text: &str) -> Result<Ion, IonError> {
+        parser_to_ion(Parser::new(text))
     }
 }
 
 fn parser_to_ion(mut parser: Parser) -> Result<Ion, IonError> {
-    match parser.read() {
-        Some(ion) => Ok(Ion::new(ion)),
-        None => Err(IonError::ParserErrors(parser.errors)),
-    }
+    parser.read().map(Ion::new).map_err(Into::into)
 }
 
 #[cfg(test)]
