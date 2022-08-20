@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
-    String(String),
+    String(Box<str>),
     Integer(i64),
     Float(f64),
     Boolean(bool),
@@ -13,7 +13,7 @@ pub enum Value {
 
 impl Value {
     pub fn new_string(value: &str) -> Self {
-        Value::String(value.to_owned())
+        Value::String(value.into())
     }
 
     pub fn new_string_array(value: &str) -> Self {
@@ -35,20 +35,13 @@ impl Value {
         }
     }
 
-    pub fn as_string(&self) -> Option<&String> {
-        match *self {
-            Value::String(ref v) => Some(v),
-            _ => None,
-        }
-    }
-
     pub fn is_string(&self) -> bool {
         matches!(*self, Value::String(_))
     }
 
     pub fn as_str(&self) -> Option<&str> {
         match *self {
-            Value::String(ref v) => Some(v.as_str()),
+            Value::String(ref v) => Some(v),
             _ => None,
         }
     }
@@ -102,7 +95,7 @@ impl Value {
 
     /// parse to the resulting type, if the inner value is not a string, convert to string first
     pub fn parse<F: FromStr>(&self) -> Result<F, F::Err> {
-        match self.as_string() {
+        match self.as_str() {
             Some(s) => s.parse(),
             None => self.to_string().parse(),
         }
@@ -113,19 +106,19 @@ impl FromStr for Value {
     type Err = IonError;
 
     fn from_str(s: &str) -> Result<Value, IonError> {
-        Ok(Self::String(s.to_owned()))
+        Ok(Self::String(s.into()))
     }
 }
 
 impl From<String> for Value {
     fn from(value: String) -> Self {
-        Self::String(value)
+        Self::String(value.into())
     }
 }
 
 impl From<&'_ str> for Value {
     fn from(value: &'_ str) -> Self {
-        Self::String(value.to_string())
+        Self::String(value.into())
     }
 }
 
@@ -177,10 +170,10 @@ mod tests {
 
     #[test]
     fn display() {
-        assert_eq!(format!("{}", Value::String("foo".to_owned())), "foo");
+        assert_eq!(format!("{}", Value::String("foo".into())), "foo");
         assert_eq!(format!("{}", Value::Integer(1)), "1");
         assert_eq!(format!("{}", Value::Boolean(true)), "true");
-        let ary = Value::Array(vec![Value::Integer(1), Value::String("foo".to_owned())]);
+        let ary = Value::Array(vec![Value::Integer(1), Value::String("foo".into())]);
         assert_eq!(format!("{}", ary), "[ 1, \"foo\" ]");
     }
 }

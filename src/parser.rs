@@ -223,7 +223,7 @@ impl<'a> Parser<'a> {
         self.cur.next();
 
         self.slice_to_exc('"')
-            .map(|v| Value::String(v.to_string()))
+            .map(|v| Value::String(v.into()))
             .ok_or_else(|| self.create_error("Cannot finish string"))
             .map(Some)
     }
@@ -398,12 +398,12 @@ impl<'a> Parser<'a> {
         Some(Element::Row(row))
     }
 
-    fn cell(&mut self) -> String {
+    fn cell(&mut self) -> Box<str> {
         self.ws();
         self.slice_to_exc('|')
             .map(str::trim_end)
             .unwrap_or("")
-            .to_owned()
+            .into()
     }
 
     fn is_section_accepted(&mut self, name: &str) -> Option<bool> {
@@ -756,20 +756,20 @@ mod tests {
 
             assert_eq!(Element::Section("dict".to_owned()), next_some_ok!(target));
             assert_eq!(
-                Element::Entry("first".to_owned(), Value::String("first".to_owned())),
+                Element::Entry("first".to_owned(), Value::String("first".into())),
                 next_some_ok!(target)
             );
             assert_eq!(Element::Comment(" comment\n".into()), next_some_ok!(target));
             assert_eq!(
-                Element::Entry("second".to_owned(), Value::String("another".to_owned())),
+                Element::Entry("second".to_owned(), Value::String("another".into())),
                 next_some_ok!(target)
             );
             assert_eq!(
-                Element::Entry("whitespace".to_owned(), Value::String("  ".to_owned())),
+                Element::Entry("whitespace".to_owned(), Value::String("  ".into())),
                 next_some_ok!(target)
             );
             assert_eq!(
-                Element::Entry("empty".to_owned(), Value::String("".to_owned())),
+                Element::Entry("empty".to_owned(), Value::String("".into())),
                 next_some_ok!(target)
             );
             assert_eq!(
@@ -780,9 +780,9 @@ mod tests {
                 Element::Entry(
                     "ary".to_owned(),
                     Value::Array(vec![
-                        Value::String("col1".to_owned()),
+                        Value::String("col1".into()),
                         Value::Integer(2),
-                        Value::String("col3".to_owned()),
+                        Value::String("col3".into()),
                         Value::Boolean(false)
                     ])
                 ),
@@ -792,38 +792,32 @@ mod tests {
             assert_eq!(Element::Section("table".to_owned()), next_some_ok!(target));
             assert_eq!(
                 Element::Row(vec![
-                    Value::String("abc".to_owned()),
-                    Value::String("def".to_owned())
+                    Value::String("abc".into()),
+                    Value::String("def".into())
                 ]),
                 next_some_ok!(target)
             );
             assert_eq!(
                 Element::Row(vec![
-                    Value::String("---".to_owned()),
-                    Value::String("---".to_owned())
+                    Value::String("---".into()),
+                    Value::String("---".into())
                 ]),
                 next_some_ok!(target)
             );
             assert_eq!(
                 Element::Row(vec![
-                    Value::String("one".to_owned()),
-                    Value::String("two".to_owned())
+                    Value::String("one".into()),
+                    Value::String("two".into())
                 ]),
                 next_some_ok!(target)
             );
             assert_eq!(Element::Comment(" comment\n".into()), next_some_ok!(target));
             assert_eq!(
-                Element::Row(vec![
-                    Value::String("1".to_owned()),
-                    Value::String("2".to_owned())
-                ]),
+                Element::Row(vec![Value::String("1".into()), Value::String("2".into())]),
                 next_some_ok!(target)
             );
             assert_eq!(
-                Element::Row(vec![
-                    Value::String("2".to_owned()),
-                    Value::String("3".to_owned())
-                ]),
+                Element::Row(vec![Value::String("2".into()), Value::String("3".into())]),
                 next_some_ok!(target)
             );
             assert_eq!(Element::Section("three".to_owned()), next_some_ok!(target));
@@ -836,7 +830,7 @@ mod tests {
                 next_some_ok!(target)
             );
             assert_eq!(
-                Element::Row(vec![Value::String("this".to_owned())]),
+                Element::Row(vec![Value::String("this".into())]),
                 next_some_ok!(target)
             );
             assert_eq!(None, target.next());
@@ -869,7 +863,7 @@ mod tests {
                         let mut section = Section::new();
                         section
                             .dictionary
-                            .insert("foo".to_owned(), Value::String("bar".to_owned()));
+                            .insert("foo".to_owned(), Value::String("bar".into()));
                         expected.insert("root".to_owned(), section);
                         assert_eq!(expected, actual);
                     }
@@ -889,10 +883,7 @@ mod tests {
 
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();
-                        let array = vec![
-                            Value::String("WAW".to_owned()),
-                            Value::String("WRO".to_owned()),
-                        ];
+                        let array = vec![Value::String("WAW".into()), Value::String("WRO".into())];
                         section
                             .dictionary
                             .insert("arr".to_owned(), Value::Array(array));
@@ -916,7 +907,7 @@ mod tests {
                         let mut expected = BTreeMap::new();
                         let mut section = Section::new();
                         let mut dict = BTreeMap::new();
-                        dict.insert("foo".to_owned(), Value::String("bar".to_owned()));
+                        dict.insert("foo".to_owned(), Value::String("bar".into()));
                         section
                             .dictionary
                             .insert("ndict".to_owned(), Value::Dictionary(dict));
@@ -943,9 +934,8 @@ mod tests {
                         let mut expected = BTreeMap::new();
                         let mut sect = Section::new();
                         let mut dict = BTreeMap::new();
-                        dict.insert("view".to_owned(), Value::String("SV".to_owned()));
-                        let array =
-                            vec![Value::String("M".to_owned()), Value::String("B".to_owned())];
+                        dict.insert("view".to_owned(), Value::String("SV".into()));
+                        let array = vec![Value::String("M".into()), Value::String("B".into())];
                         dict.insert("loc".to_owned(), Value::Array(array));
                         let mut dict_dict = BTreeMap::new();
                         dict_dict.insert("beach_km".to_owned(), Value::Float(4.1));
@@ -990,11 +980,9 @@ mod tests {
 
                         let mut expected = BTreeMap::new();
                         let mut sect = Section::new();
-                        sect.rows.push(vec![
-                            Value::String("1".to_owned()),
-                            Value::String("2".to_owned()),
-                        ]);
-                        sect.rows.push(vec![Value::String("3".to_owned())]);
+                        sect.rows
+                            .push(vec![Value::String("1".into()), Value::String("2".into())]);
+                        sect.rows.push(vec![Value::String("3".into())]);
                         expected.insert("root".to_owned(), sect);
                         assert_eq!(expected, actual);
                     }
@@ -1016,14 +1004,12 @@ mod tests {
                         let mut expected = BTreeMap::new();
                         let mut sect = Section::new();
                         sect.rows.push(vec![
-                            Value::String("1".to_owned()),
-                            Value::String("".to_owned()),
-                            Value::String("2".to_owned()),
+                            Value::String("1".into()),
+                            Value::String("".into()),
+                            Value::String("2".into()),
                         ]);
-                        sect.rows.push(vec![
-                            Value::String("3".to_owned()),
-                            Value::String("".to_owned()),
-                        ]);
+                        sect.rows
+                            .push(vec![Value::String("3".into()), Value::String("".into())]);
                         expected.insert("root".to_owned(), sect);
                         assert_eq!(expected, actual);
                     }
@@ -1053,10 +1039,10 @@ mod tests {
                             let mut section = Section::new();
                             section
                                 .dictionary
-                                .insert("key".to_owned(), Value::String("value".to_owned()));
+                                .insert("key".to_owned(), Value::String("value".into()));
                             let mut row = Vec::new();
-                            row.push(Value::String("col1".to_owned()));
-                            row.push(Value::String("col2".to_owned()));
+                            row.push(Value::String("col1".into()));
+                            row.push(Value::String("col2".into()));
                             section.rows.push(row.clone());
                             section.rows.push(row.clone());
                             section.rows.push(row);
@@ -1090,10 +1076,10 @@ mod tests {
                         let mut section = Section::new();
                         section
                             .dictionary
-                            .insert("2key".to_owned(), Value::String("2value".to_owned()));
+                            .insert("2key".to_owned(), Value::String("2value".into()));
                         section.rows.push(vec![
-                            Value::String("2col1".to_string()),
-                            Value::String("2col2".to_string()),
+                            Value::String("2col1".into()),
+                            Value::String("2col2".into()),
                         ]);
                         expected.insert("SECTION".to_owned(), section);
                         assert_eq!(expected, actual);
@@ -1146,10 +1132,10 @@ mod tests {
                         let mut section = Section::new();
                         section
                             .dictionary
-                            .insert("key".to_owned(), Value::String("value".to_owned()));
+                            .insert("key".to_owned(), Value::String("value".into()));
                         section.rows.push(vec![
-                            Value::String("col1".to_string()),
-                            Value::String("col2".to_string()),
+                            Value::String("col1".into()),
+                            Value::String("col2".into()),
                         ]);
                         expected.insert("ACCEPTED".to_owned(), section);
                         assert_eq!(expected, actual);
@@ -1199,10 +1185,10 @@ mod tests {
                         let mut section = Section::new();
                         section
                             .dictionary
-                            .insert("key".to_owned(), Value::String("value".to_owned()));
+                            .insert("key".to_owned(), Value::String("value".into()));
                         section.rows.push(vec![
-                            Value::String("col1".to_string()),
-                            Value::String("col2".to_string()),
+                            Value::String("col1".into()),
+                            Value::String("col2".into()),
                         ]);
                         expected.insert("ACCEPTED".to_owned(), section);
                         assert_eq!(expected, actual);
@@ -1230,10 +1216,10 @@ mod tests {
                         let mut section = Section::new();
                         section
                             .dictionary
-                            .insert("key".to_owned(), Value::String("value".to_owned()));
+                            .insert("key".to_owned(), Value::String("value".into()));
                         section.rows.push(vec![
-                            Value::String("col1".to_string()),
-                            Value::String("col2".to_string()),
+                            Value::String("col1".into()),
+                            Value::String("col2".into()),
                         ]);
                         expected.insert("ACCEPTED".to_owned(), section);
                         assert_eq!(expected, actual);
@@ -1264,10 +1250,10 @@ mod tests {
                             let mut section = Section::new();
                             section
                                 .dictionary
-                                .insert("1key".to_owned(), Value::String("1value".to_owned()));
+                                .insert("1key".to_owned(), Value::String("1value".into()));
                             section.rows.push(vec![
-                                Value::String("1col1".to_string()),
-                                Value::String("1col2".to_string()),
+                                Value::String("1col1".into()),
+                                Value::String("1col2".into()),
                             ]);
                             expected.insert("ACCEPTED".to_owned(), section);
                             assert_eq!(expected, actual);
@@ -1295,10 +1281,10 @@ mod tests {
                             let mut section = Section::new();
                             section
                                 .dictionary
-                                .insert("1key".to_owned(), Value::String("1value".to_owned()));
+                                .insert("1key".to_owned(), Value::String("1value".into()));
                             section.rows.push(vec![
-                                Value::String("1col1".to_string()),
-                                Value::String("1col2".to_string()),
+                                Value::String("1col1".into()),
+                                Value::String("1col2".into()),
                             ]);
                             expected.insert("ACCEPTED".to_owned(), section);
                             assert_eq!(expected, actual);
@@ -1350,10 +1336,10 @@ mod tests {
                         let mut section = Section::new();
                         section
                             .dictionary
-                            .insert("key".to_owned(), Value::String("value".to_owned()));
+                            .insert("key".to_owned(), Value::String("value".into()));
                         section.rows.push(vec![
-                            Value::String("col1".to_string()),
-                            Value::String("col2".to_string()),
+                            Value::String("col1".into()),
+                            Value::String("col2".into()),
                         ]);
                         expected.insert("ACCEPTED".to_owned(), section);
                         assert_eq!(expected, actual);

@@ -10,7 +10,7 @@ impl FromIon<Value> for String {
     type Err = ();
 
     fn from_ion(value: &Value) -> Result<Self, Self::Err> {
-        value.as_string().map(|s| s.to_owned()).ok_or(())
+        value.as_str().map(|s| s.to_owned()).ok_or(())
     }
 }
 
@@ -19,7 +19,7 @@ impl FromIon<Value> for Option<String> {
 
     fn from_ion(value: &Value) -> Result<Self, Self::Err> {
         value
-            .as_string()
+            .as_str()
             .map(|s| {
                 if s.is_empty() {
                     None
@@ -36,7 +36,7 @@ macro_rules! from_ion_value_int_impl {
          impl FromIon<Value> for $t {
              type Err = ::std::num::ParseIntError;
              fn from_ion(value: &Value) -> Result<Self, Self::Err> {
-                match value.as_string() {
+                match value.as_str() {
                     Some(s) => Ok(s.parse()?),
                     None => "".parse()
                 }
@@ -50,7 +50,7 @@ from_ion_value_int_impl! { isize i8 i16 i32 i64 usize u8 u16 u32 u64 }
 impl FromIon<Value> for bool {
     type Err = ::std::str::ParseBoolError;
     fn from_ion(value: &Value) -> Result<Self, Self::Err> {
-        match value.as_string() {
+        match value.as_str() {
             Some(s) => Ok(s.parse()?),
             None => "".parse(),
         }
@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn string() {
-        let v = Value::String("foo".to_owned());
+        let v = Value::String("foo".into());
         let s = String::from_ion(&v).unwrap();
         assert_eq!("foo", s);
         let s: String = v.from_ion().unwrap();
