@@ -53,7 +53,7 @@ mod tests {
     fn from_row() {
         let row: Vec<_> = "1|foo"
             .split("|")
-            .map(|s| Value::String(s.to_owned()))
+            .map(|s| Value::String(s.into()))
             .collect();
         let foo = Foo::from_str_iter(row.iter()).unwrap();
         assert_eq!(

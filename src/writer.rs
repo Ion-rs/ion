@@ -73,7 +73,7 @@ mod tests {
         {
             let mut w = Writer::new(Box::new(unsafe { s.as_mut_vec() }));
             w.section("TEST");
-            w.key_value("string", &Value::String("bar".to_string()));
+            w.key_value("string", &Value::String("bar".into()));
             w.key_value("integer", &Value::Integer(1));
             w.key_value("boolean", &Value::Boolean(true));
             w.key_value(
@@ -81,11 +81,11 @@ mod tests {
                 &Value::Array(vec![
                     Value::Integer(1),
                     Value::Integer(2),
-                    Value::String("foobar".to_string()),
+                    Value::String("foobar".into()),
                 ]),
             );
             let mut dict = BTreeMap::new();
-            dict.insert("foo".to_string(), Value::String("bar".to_string()));
+            dict.insert("foo".to_string(), Value::String("bar".into()));
             w.key_value("dict", &Value::Dictionary(dict));
         }
 

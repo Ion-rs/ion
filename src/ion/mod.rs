@@ -92,9 +92,9 @@ mod tests {
     #[test]
     fn as_string() {
         let v = Value::String("foo".into());
-        assert_eq!(Some(&"foo".into()), v.as_string());
+        assert_eq!(Some("foo"), v.as_str());
         let v = Value::Integer(1);
-        assert_eq!(None, v.as_string());
+        assert_eq!(None, v.as_str());
     }
 
     #[test]
