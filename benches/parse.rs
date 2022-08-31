@@ -8,6 +8,7 @@ use test::{black_box, Bencher};
 
 // all these files have the same number of section and lines.
 // they differ by the location of the section in the file only.
+const CONTRACT_WITH_COMMENTS: &str = include_str!("../tests/data/contract_with_comments.ion");
 const CONTRACT_AND_DEF_HOTEL_ON_START: &str =
     include_str!("../tests/data/contract_and_def_hotel_on_start.ion");
 const CONTRACT_ON_START_DEF_HOTEL_ON_END: &str =
@@ -18,6 +19,14 @@ const CONTRACT_AND_DEF_HOTEL_ON_END: &str =
 mod parse {
     use super::*;
     use std::str::FromStr;
+
+    #[bench]
+    fn contract_with_comments(bencher: &mut Bencher) {
+        bencher.iter(|| {
+            let result = Ion::from_str(CONTRACT_WITH_COMMENTS);
+            black_box(result.unwrap())
+        })
+    }
 
     #[bench]
     fn contract_and_def_hotel_on_start(bencher: &mut Bencher) {

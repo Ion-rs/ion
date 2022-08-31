@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn from_row() {
         let row: Vec<_> = "1|foo"
-            .split("|")
+            .split('|')
             .map(|s| Value::String(s.into()))
             .collect();
         let foo = Foo::from_str_iter(row.iter()).unwrap();

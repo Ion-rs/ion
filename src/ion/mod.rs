@@ -1,23 +1,9 @@
-#[macro_export]
-macro_rules! ion {
-    ($raw:expr) => {{
-        $raw.parse::<$crate::Ion>()
-            .expect("Failed parsing to 'Ion'")
-    }};
-}
-
-#[macro_export]
-macro_rules! ion_filtered {
-    ($raw:expr, $accepted_sections:expr) => {
-        $crate::Ion::from_str_filtered($raw, $accepted_sections)
-            .expect("Failed parsing by 'from_str_filtered' to 'Ion'")
-    };
-}
-
 mod display;
 mod from_ion;
 mod from_row;
 mod ion_error;
+#[macro_use]
+mod macros;
 mod section;
 mod value;
 
@@ -31,8 +17,16 @@ pub use self::ion_error::IonError;
 pub use self::section::Section;
 pub use self::value::Value;
 
-#[derive(Debug)]
+pub type Dictionary = BTreeMap<String, Value>;
+pub type Row = Vec<Value>;
+
+#[cfg(feature = "serde-json")]
+use serde::Serialize;
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde-json", derive(Serialize))]
 pub struct Ion {
+    #[cfg_attr(feature = "serde-json", serde(flatten))]
     sections: BTreeMap<String, Section>,
 }
 
@@ -76,7 +70,7 @@ impl Ion {
 impl str::FromStr for Ion {
     type Err = IonError;
 
-    fn from_str(text: &str) -> Result<Ion, IonError> {
+    fn from_str(text: &str) -> Result<Self, IonError> {
         parser_to_ion(Parser::new(text))
     }
 }

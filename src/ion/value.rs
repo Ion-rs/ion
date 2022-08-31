@@ -1,7 +1,11 @@
+#[cfg(feature = "serde-json")]
+use serde::Serialize;
+
 use crate::{Dictionary, FromIon, IonError, Row};
 use std::str::FromStr;
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde-json", derive(Serialize), serde(untagged))]
 pub enum Value {
     String(Box<str>),
     Integer(i64),
@@ -12,11 +16,11 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn new_string(value: &str) -> Self {
-        Value::String(value.into())
+    pub fn new_string<T: AsRef<str>>(value: T) -> Self {
+        Value::String(value.as_ref().into())
     }
 
-    pub fn new_string_array(value: &str) -> Self {
+    pub fn new_string_array<T: AsRef<str>>(value: T) -> Self {
         Self::new_array(Self::new_string(value))
     }
 
@@ -67,7 +71,7 @@ impl Value {
         }
     }
 
-    pub fn as_array(&self) -> Option<&Vec<Value>> {
+    pub fn as_array(&self) -> Option<&Row> {
         match *self {
             Value::Array(ref v) => Some(v),
             _ => None,
