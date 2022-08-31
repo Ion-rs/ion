@@ -1,5 +1,8 @@
 # ion &emsp; [![crates-badge]][crates-link] [![docs-badge]][docs-link]
 
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/rust-lang/docs.rs/master/LICENSE)
+[![Test Status](https://github.com/ion-rs/ion/workflows/Test/badge.svg)](https://github.com/ion-rs/ion/actions)
+
 [crates-badge]: https://img.shields.io/crates/v/ion.svg
 [crates-link]: https://crates.io/crates/ion
 [docs-badge]: https://img.shields.io/badge/docs.rs-latest-informational
@@ -69,7 +72,6 @@ markets = ["PL", "DE", "UK"]
 
 [RATE.PLAN]
 |       dates       | code |  description   |    rooms    | rules |
-|-------------------|------|----------------|-------------|-------|
 | 20200512:20200514 | BAR  | Best available | SGL,DBL,APP |       |
 | 20200601:20200614 | BBV  | Best Bar View  | DBL,APP     |       |
 
@@ -90,4 +92,3 @@ legend = {
 ## License
 
 Licensed under the MIT license.
-[![Test Status](https://github.com/ion-rs/ion/workflows/Test/badge.svg)](https://github.com/ion-rs/ion/actions)
