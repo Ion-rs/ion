@@ -14,6 +14,7 @@ pub enum Element {
     Comment(String),
 }
 
+#[derive(Debug)]
 pub struct Parser<'a> {
     input: &'a str,
     cur: Peekable<str::CharIndices<'a>>,
@@ -29,6 +30,7 @@ impl<'a> Iterator for Parser<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut is_section_accepted = true;
+
         loop {
             self.ws();
             if self.newline() {
@@ -55,7 +57,7 @@ impl<'a> Iterator for Parser<'a> {
 
             return match c {
                 '|' => self.row().map(Ok),
-                '#' => self.comment().map(Ok),
+                '#' => self.create_comment().map(Ok),
                 _ => self.entry().transpose(),
             };
         }
@@ -163,20 +165,30 @@ impl<'a> Parser<'a> {
 
     #[allow(clippy::skip_while_next)]
     fn skip_line(&mut self) {
-        // suggested by clippy change `self.cur.by_ref().find(|(_, c)| *c != '\n');` slows down the parser in some cases twice
+        // suggested by clippy change `self.cur.by_ref().find(|(_, c)| *c != '\n');` slows down twice the parser in some cases
         self.cur.by_ref().skip_while(|&(_, c)| c != '\n').next();
     }
 
-    fn comment(&mut self) -> Option<Element> {
-        if !self.eat('#') {
-            return None;
-        }
-
-        Some(Element::Comment(
-            self.slice_to_inc('\n').unwrap_or("").into(),
-        ))
+    /// Returns `true` if the next char equals to the `#` comment char otherwise `false`.
+    /// If the next char is the comment char then the whole comment till the `\n` is eaten.
+    fn eat_comment(&mut self) -> bool {
+        self.eat('#')
+            .then(|| {
+                self.slice_to_inc('\n');
+            })
+            .is_some()
     }
 
+    /// Returns the `Element::Comment` starting from the next char till the `\n`.
+    /// It does not check if the next char is the `#` comment char.
+    /// All comments chars are eaten.
+    fn create_comment(&mut self) -> Option<Element> {
+        self.cur
+            .next()
+            .map(|_| Element::Comment(self.slice_to_inc('\n').unwrap_or("").into()))
+    }
+
+    /// Returns `true` if the next char equals to the `ch` and eats it otherwise returns `false`
     fn eat(&mut self, ch: char) -> bool {
         match self.cur.peek() {
             Some((_, c)) if *c == ch => {
@@ -382,9 +394,9 @@ impl<'a> Parser<'a> {
 
         loop {
             self.ws();
-            if self.comment().is_some() {
+            if self.eat_comment() {
                 break;
-            } // this will eat and NOT return comments within tables
+            }
             if self.newline() {
                 break;
             }
@@ -423,12 +435,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // returns slice from the next character to `ch`, inclusive
-    // after this function, self.cur.next() returns the next character after `ch`
-    // None is only returned if the input is empty
-    // Examples:
-    // Parser::new("foObar").slice_to_inc('b') == Some("foOb"), self.cur.next() == (4, 'a')
-    // Parser::new("foObar").slice_to_inc('f') == Some("f"),    self.cur.next() == (1, 'o')
+    /// returns slice from the next character to `ch`, inclusive
+    /// after this function, self.cur.next() returns the next character after `ch`
+    /// `None` is only returned if the input is empty
+    ///
+    /// Examples:
+    /// Parser::new("foObar").slice_to_inc('b') == Some("foOb"), self.cur.next() == (4, 'a')
+    /// Parser::new("foObar").slice_to_inc('f') == Some("f"),    self.cur.next() == (1, 'o')
     fn slice_to_inc(&mut self, ch: char) -> Option<&'a str> {
         self.cur.next().map(|(start, c)| {
             if c == ch {
@@ -441,12 +454,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // returns slice from the next character to `ch`
-    // the result is exclusive (does not contain `ch`), but the functions consumes `ch`
-    // None is returned when the input is empty or when `ch` is the next character
-    // Examples:
-    // Parser::new("foObar").slice_to_exc('b') == Some("foO"), self.cur.next() == (4, 'a')
-    // Parser::new("foObar").slice_to_exc('f') == None,        self.cur.next() == (1, 'o')
+    /// returns slice from the next character to `ch`
+    /// the result is exclusive (does not contain `ch`), but the function consumes `ch`
+    /// `None` is returned when the input is empty or when `ch` is the next character
+    ///
+    /// # Examples:
+    /// Parser::new("foObar").slice_to_exc('b') == Some("foO"), self.cur.next() == (4, 'a')
+    /// Parser::new("foObar").slice_to_exc('f') == None,        self.cur.next() == (1, 'o')
     fn slice_to_exc(&mut self, ch: char) -> Option<&'a str> {
         self.cur.next().map(|(start, c)| {
             if c == ch {
@@ -459,12 +473,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // returns slice from the next character to the last consecutive character matching the predicate
-    // the result is exclusive (does not contain `ch`) and does not consume `ch`
-    // None is returned when the input is empty or when `ch` is the next character
-    // Examples:
-    // Parser::new("foObar").slice_while(|c| c != 'b') == Some("foO"), self.cur.next() == (3, 'b')
-    // Parser::new("foObar").slice_while(|c| c != 'f') == None,        self.cur.next() == (0, 'f')
+    /// returns slice from the next character to the last consecutive character matching the predicate
+    /// the result is exclusive (does not contain `ch`) and does not consume `ch`
+    /// `None` is returned when the input is empty or when `ch` is the next character
+    ///
+    /// # Examples:
+    /// Parser::new("foObar").slice_while(|c| c != 'b') == Some("foO"), self.cur.next() == (3, 'b')
+    /// Parser::new("foObar").slice_while(|c| c != 'f') == None,        self.cur.next() == (0, 'f')
     fn slice_while(&mut self, predicate: impl Fn(char) -> bool) -> Option<&'a str> {
         self.cur.peek().cloned().and_then(|(start, c)| {
             if !predicate(c) {
@@ -1040,9 +1055,8 @@ mod tests {
                             section
                                 .dictionary
                                 .insert("key".to_owned(), Value::String("value".into()));
-                            let mut row = Vec::new();
-                            row.push(Value::String("col1".into()));
-                            row.push(Value::String("col2".into()));
+                            let row =
+                                vec![Value::String("col1".into()), Value::String("col2".into())];
                             section.rows.push(row.clone());
                             section.rows.push(row.clone());
                             section.rows.push(row);

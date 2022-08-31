@@ -1,9 +1,15 @@
+#[cfg(feature = "serde-json")]
+use serde::Serialize;
+
 use crate::{Dictionary, FromIon, IonError, Row, Value};
 use std::vec;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde-json", derive(Serialize))]
 pub struct Section {
+    #[cfg_attr(feature = "serde-json", serde(flatten))]
     pub dictionary: Dictionary,
+    #[cfg_attr(feature = "serde-json", serde(skip_serializing_if = "Vec::is_empty"))]
     pub rows: Vec<Row>,
 }
 
@@ -126,6 +132,7 @@ impl IntoIterator for Section {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ion;
     use crate::ion::Ion;
     use quickcheck::TestResult;
     use regex::Regex;
@@ -141,6 +148,7 @@ mod tests {
         use super::*;
 
         mod without_headers {
+
             use super::*;
 
             #[test]
@@ -155,8 +163,7 @@ mod tests {
                 );
 
                 let section: &Section = ion.get("FOO").unwrap();
-                let rows: Vec<_> = section.into_iter().collect();
-                assert_eq!(3, rows.len());
+                assert_eq!(3, section.into_iter().count());
             }
 
             #[test]
@@ -171,8 +178,7 @@ mod tests {
                 );
 
                 let section: Section = ion.remove("FOO").unwrap();
-                let rows: Vec<_> = section.into_iter().collect();
-                assert_eq!(3, rows.len());
+                assert_eq!(3, section.into_iter().count());
             }
 
             #[test]
@@ -212,9 +218,7 @@ mod tests {
                 );
 
                 let section: Section = ion.remove("FOO").unwrap();
-                let rows: Vec<_> = section.into_iter().collect();
-
-                assert_eq!(3, rows.len());
+                assert_eq!(3, section.into_iter().count());
             }
         }
     }

@@ -1,4 +1,4 @@
-use crate::parser::ParserError;
+use crate::ParserError;
 use std::{error, fmt};
 
 #[derive(Clone, Debug, Eq, PartialEq)]

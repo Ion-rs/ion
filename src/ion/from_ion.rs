@@ -94,11 +94,11 @@ mod tests {
     fn bool() {
         let v = Value::from_str("true").unwrap();
         let u: bool = v.from_ion().unwrap();
-        assert_eq!(true, u);
+        assert!(u);
 
         let v = Value::from_str("false").unwrap();
         let u: bool = v.from_ion().unwrap();
-        assert_eq!(false, u);
+        assert!(!u);
 
         let v = Value::from_str("").unwrap();
         let u: Result<bool, _> = v.from_ion();
