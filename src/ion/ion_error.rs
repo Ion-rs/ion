@@ -1,12 +1,11 @@
+use crate::ParserError;
 use std::{error, fmt};
-use parser::ParserError;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IonError {
-    MissingSection(String),
-    MissingValue(String),
-    ParseError,
-    ParserErrors(Vec<ParserError>),
+    MissingSection(Box<str>),
+    MissingValue(Box<str>),
+    ParserError(ParserError),
 }
 
 impl error::Error for IonError {
@@ -18,5 +17,11 @@ impl error::Error for IonError {
 impl fmt::Display for IonError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
+    }
+}
+
+impl From<ParserError> for IonError {
+    fn from(error: ParserError) -> Self {
+        Self::ParserError(error)
     }
 }

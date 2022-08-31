@@ -1,5 +1,4 @@
-use {Ion, Section, Value};
-
+use crate::{Ion, Section, Value};
 use std::fmt;
 
 impl fmt::Display for Ion {
@@ -85,9 +84,3 @@ impl fmt::Display for Value {
         }
     }
 }
-
-// impl fmt::Display for super::Error {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         fmt::Debug::fmt(self, f)
-//     }
-// }

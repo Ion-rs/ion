@@ -1,13 +1,27 @@
-use std::vec;
-use {Dictionary, FromIon, IonError, Row, Value};
+#[cfg(feature = "serde-json")]
+use serde::Serialize;
 
-#[derive(Debug, PartialEq)]
+use crate::{Dictionary, FromIon, IonError, Row, Value};
+use std::vec;
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde-json", derive(Serialize))]
 pub struct Section {
+    #[cfg_attr(feature = "serde-json", serde(flatten))]
     pub dictionary: Dictionary,
+    #[cfg_attr(feature = "serde-json", serde(skip_serializing_if = "Vec::is_empty"))]
     pub rows: Vec<Row>,
 }
 
+impl Default for Section {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Section {
+    pub const DEFAULT_NAME: &'static str = "root";
+
     pub fn new() -> Section {
         Self::with_capacity(1)
     }
@@ -25,7 +39,8 @@ impl Section {
 
     /// like get, only returns a `Result`
     pub fn fetch(&self, key: &str) -> Result<&Value, IonError> {
-        self.get(key).ok_or(IonError::MissingValue(key.to_owned()))
+        self.get(key)
+            .ok_or_else(|| IonError::MissingValue(key.into()))
     }
 
     pub fn rows_without_header(&self) -> &[Row] {
@@ -68,14 +83,11 @@ impl<T> Iterator for IntoIter<T> {
 impl<'a> IntoIterator for &'a Section {
     type Item = Row;
     type IntoIter = IntoIter<Self::Item>;
+
+    #[allow(clippy::unnecessary_to_owned)]
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            iter: self
-                .rows_without_header()
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .into_iter(),
+            iter: self.rows_without_header().to_vec().into_iter(),
         }
     }
 }
@@ -83,6 +95,7 @@ impl<'a> IntoIterator for &'a Section {
 impl IntoIterator for Section {
     type Item = Row;
     type IntoIter = IntoIter<Row>;
+
     fn into_iter(self) -> Self::IntoIter {
         let has_header = self
             .rows
@@ -90,8 +103,8 @@ impl IntoIterator for Section {
             .skip(1)
             .take(1)
             .take_while(|&v| {
-                if let Some(Value::String(ref s)) = v.iter().skip(1).next() {
-                    s.starts_with("-")
+                if let Some(Value::String(s)) = v.get(1).as_ref() {
+                    s.starts_with('-')
                 } else {
                     false
                 }
@@ -118,9 +131,11 @@ impl IntoIterator for Section {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::ion;
+    use crate::ion::Ion;
     use quickcheck::TestResult;
     use regex::Regex;
-    use {Ion, Section};
 
     fn is_input_string_invalid(s: &str) -> bool {
         // ion cell is invalid if it contains any of [\n \t|\r] or is entirely made out of hyphens
@@ -133,6 +148,7 @@ mod tests {
         use super::*;
 
         mod without_headers {
+
             use super::*;
 
             #[test]
@@ -147,8 +163,7 @@ mod tests {
                 );
 
                 let section: &Section = ion.get("FOO").unwrap();
-                let rows: Vec<_> = section.into_iter().collect();
-                assert_eq!(3, rows.len());
+                assert_eq!(3, section.into_iter().count());
             }
 
             #[test]
@@ -163,8 +178,7 @@ mod tests {
                 );
 
                 let section: Section = ion.remove("FOO").unwrap();
-                let rows: Vec<_> = section.into_iter().collect();
-                assert_eq!(3, rows.len());
+                assert_eq!(3, section.into_iter().count());
             }
 
             #[test]
@@ -204,14 +218,14 @@ mod tests {
                 );
 
                 let section: Section = ion.remove("FOO").unwrap();
-                let rows: Vec<_> = section.into_iter().collect();
-
-                assert_eq!(3, rows.len());
+                assert_eq!(3, section.into_iter().count());
             }
         }
     }
 
     mod with_headers {
+        use quickcheck_macros::quickcheck;
+
         use super::*;
 
         #[quickcheck]
@@ -292,6 +306,8 @@ mod tests {
     }
 
     mod without_headers {
+        use quickcheck_macros::quickcheck;
+
         use super::*;
 
         #[quickcheck]
