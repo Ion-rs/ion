@@ -1,6 +1,11 @@
-# ion_rs
+# ion &emsp; [![crates-badge]][crates-link] [![docs-badge]][docs-link]
 
-Parser for `*.ion` files, e.g.:
+[crates-badge]: https://img.shields.io/crates/v/ion.svg
+[crates-link]: https://crates.io/crates/ion
+[docs-badge]: https://img.shields.io/badge/docs.rs-latest-informational
+[docs-link]: https://docs.rs/ion
+
+Parser for `*.ion` files:
 
 ``` ini
 [CONTRACT]

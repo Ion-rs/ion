@@ -4,6 +4,7 @@
 
 - Added license
 - Cleaned up API, removed `Writer`
+- Renamed repository from `ion_rs` to `ion`
 
 ## 0.8.9
 
