@@ -1,5 +1,5 @@
+use crate::{Dictionary, FromIon, IonError, Row};
 use std::str::FromStr;
-use {Dictionary, FromIon, IonError, Row};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
@@ -43,10 +43,7 @@ impl Value {
     }
 
     pub fn is_string(&self) -> bool {
-        match *self {
-            Value::String(_) => true,
-            _ => false,
-        }
+        matches!(*self, Value::String(_))
     }
 
     pub fn as_str(&self) -> Option<&str> {
@@ -122,7 +119,7 @@ impl FromStr for Value {
 
 #[cfg(test)]
 mod tests {
-    use Value;
+    use crate::Value;
 
     #[test]
     fn integer() {

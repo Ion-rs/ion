@@ -1,17 +1,3 @@
-#[macro_export]
-macro_rules! ion {
-    ($raw:expr) => ({
-        $raw.parse::<::ion::Ion>().expect("Failed parsing to 'Ion'")
-    })
-}
-
-#[macro_export]
-macro_rules! ion_filtered {
-    ($raw:expr, $accepted_sections:expr) => {
-        ::ion::Ion::from_str_filtered($raw, $accepted_sections).expect("Failed parsing by 'from_str_filtered' to 'Ion'")
-    }
-}
-
 mod display;
 mod from_ion;
 mod from_row;
@@ -19,15 +5,15 @@ mod ion_error;
 mod section;
 mod value;
 
-use std::str;
+use crate::Parser;
 use std::collections::BTreeMap;
-use Parser;
+use std::str;
 
 pub use self::ion_error::IonError;
 pub use self::section::Section;
 pub use self::value::Value;
-pub use ion::from_row::FromRow;
-pub use ion::from_ion::FromIon;
+pub use crate::ion::from_ion::FromIon;
+pub use crate::ion::from_row::FromRow;
 
 #[derive(Debug)]
 pub struct Ion {
@@ -48,7 +34,8 @@ impl Ion {
     }
 
     pub fn fetch(&self, key: &str) -> Result<&Section, IonError> {
-        self.get(key).ok_or(IonError::MissingSection(key.to_owned()))
+        self.get(key)
+            .ok_or(IonError::MissingSection(key.to_owned()))
     }
 
     /// Removes a `Section` from the ion structure and returning it
@@ -76,9 +63,24 @@ fn parser_to_ion(mut parser: Parser) -> Result<Ion, IonError> {
     }
 }
 
+#[macro_export]
+macro_rules! ion {
+    ($raw:expr) => {{
+        $raw.parse::<Ion>().expect("Failed parsing to 'Ion'")
+    }};
+}
+
+#[macro_export]
+macro_rules! ion_filtered {
+    ($raw:expr, $accepted_sections:expr) => {
+        Ion::from_str_filtered($raw, $accepted_sections)
+            .expect("Failed parsing by 'from_str_filtered' to 'Ion'")
+    };
+}
+
 #[cfg(test)]
 mod tests {
-    use Value;
+    use crate::{Ion, Value};
 
     #[test]
     fn as_string() {
@@ -114,12 +116,14 @@ mod tests {
 
     #[test]
     fn row_without_header() {
-        let ion = ion!(r#"
+        let ion = ion!(
+            r#"
             [FOO]
             |1||2|
             |1|   |2|
             |1|2|3|
-        "#);
+        "#
+        );
 
         let rows = ion.get("FOO").unwrap().rows_without_header();
         assert!(rows.len() == 3);
@@ -127,13 +131,15 @@ mod tests {
 
     #[test]
     fn row_with_header() {
-        let ion = ion!(r#"
+        let ion = ion!(
+            r#"
             [FOO]
             | 1 | 2 | 3 |
             |---|---|---|
             |1||2|
             |1|   |2|
-        "#);
+        "#
+        );
 
         let rows = ion.get("FOO").unwrap().rows_without_header();
         assert!(rows.len() == 2);
@@ -141,11 +147,13 @@ mod tests {
 
     #[test]
     fn no_rows_with_header() {
-        let ion = ion!(r#"
+        let ion = ion!(
+            r#"
             [FOO]
             | 1 | 2 | 3 |
             |---|---|---|
-        "#);
+        "#
+        );
 
         let rows = ion.get("FOO").unwrap().rows_without_header();
         assert_eq!(0, rows.len());
@@ -153,14 +161,17 @@ mod tests {
 
     #[test]
     fn filtered_section() {
-        let ion = ion_filtered!(r#"
+        let ion = ion_filtered!(
+            r#"
             [FOO]
             |1||2|
             |1|   |2|
             |1|2|3|
             [BAR]
             |1||2|
-        "#, vec!["FOO"]);
+        "#,
+            vec!["FOO"]
+        );
 
         let rows = ion.get("FOO").unwrap().rows_without_header();
         assert_eq!(3, rows.len());

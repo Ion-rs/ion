@@ -1,11 +1,11 @@
-use {Ion, Section, Value};
+use crate::{Ion, Section, Value};
 
 use std::fmt;
 
 impl fmt::Display for Ion {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         for (name, section) in &self.sections {
-            f.write_fmt(format_args!("[{}]\n", name))?;
+            f.write_fmt(format_args!("[{name}]\n"))?;
             section.fmt(f)?;
             f.write_str("\n")?;
         }
@@ -17,15 +17,15 @@ impl fmt::Display for Section {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         for (k, v) in &self.dictionary {
             if v.type_str() == "string" {
-                f.write_fmt(format_args!("{} = \"{}\"\n", k, v))?;
+                f.write_fmt(format_args!("{k} = \"{v}\"\n"))?;
             } else {
-                f.write_fmt(format_args!("{} = {}\n", k, v))?;
+                f.write_fmt(format_args!("{k} = {v}\n"))?;
             }
         }
 
         for row in &self.rows {
             for cell in row {
-                fmt::Display::fmt(&format!("| {} ", cell), f)?;
+                fmt::Display::fmt(&format!("| {cell} "), f)?;
             }
             f.write_str("|\n")?;
         }
@@ -36,7 +36,18 @@ impl fmt::Display for Section {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            Value::String(ref v) => v.fmt(f),
+            Value::String(ref v) => {
+                for c in v.chars() {
+                    match c {
+                        '\\' => write!(f, "\\\\")?,
+                        '\n' => write!(f, "\\n")?,
+                        '\"' => write!(f, "\\\"")?,
+                        c => write!(f, "{c}")?,
+                    }
+                }
+
+                Ok(())
+            }
             Value::Integer(ref v) => v.fmt(f),
             Value::Float(ref v) => v.fmt(f),
             Value::Boolean(ref v) => v.fmt(f),
@@ -85,9 +96,3 @@ impl fmt::Display for Value {
         }
     }
 }
-
-// impl fmt::Display for super::Error {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         fmt::Debug::fmt(self, f)
-//     }
-// }

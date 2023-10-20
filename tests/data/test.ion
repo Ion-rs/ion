@@ -1,6 +1,6 @@
 [dict]
 ary = [ "a", "b", 3 ]
-first = "first"
+first = "hello \\ hello \n hello \""
 # comment
 second ="another"
 bool = true
