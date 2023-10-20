@@ -5,15 +5,14 @@ mod ion_error;
 mod section;
 mod value;
 
+pub use self::from_ion::*;
+pub use self::from_row::*;
+pub use self::ion_error::*;
+pub use self::section::*;
+pub use self::value::*;
 use crate::Parser;
 use std::collections::BTreeMap;
 use std::str;
-
-pub use self::ion_error::IonError;
-pub use self::section::Section;
-pub use self::value::Value;
-pub use crate::ion::from_ion::FromIon;
-pub use crate::ion::from_row::FromRow;
 
 #[derive(Debug)]
 pub struct Ion {
@@ -21,8 +20,8 @@ pub struct Ion {
 }
 
 impl Ion {
-    pub fn new(map: BTreeMap<String, Section>) -> Ion {
-        Ion { sections: map }
+    pub fn new(sections: BTreeMap<String, Section>) -> Ion {
+        Ion { sections }
     }
 
     pub fn from_str_filtered(s: &str, accepted_sections: Vec<&str>) -> Result<Self, IonError> {
@@ -35,15 +34,14 @@ impl Ion {
 
     pub fn fetch(&self, key: &str) -> Result<&Section, IonError> {
         self.get(key)
-            .ok_or(IonError::MissingSection(key.to_owned()))
+            .ok_or_else(|| IonError::MissingSection(key.to_owned()))
     }
 
-    /// Removes a `Section` from the ion structure and returning it
     pub fn remove(&mut self, key: &str) -> Option<Section> {
         self.sections.remove(key)
     }
 
-    pub fn iter(&self) -> ::std::collections::btree_map::Iter<String, Section> {
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Section)> {
         self.sections.iter()
     }
 }
@@ -65,9 +63,7 @@ fn parser_to_ion(mut parser: Parser) -> Result<Ion, IonError> {
 
 #[macro_export]
 macro_rules! ion {
-    ($raw:expr) => {{
-        $raw.parse::<Ion>().expect("Failed parsing to 'Ion'")
-    }};
+    ($raw:expr) => {{ $raw.parse::<Ion>().expect("Failed parsing to 'Ion'") }};
 }
 
 #[macro_export]
@@ -86,6 +82,7 @@ mod tests {
     fn as_string() {
         let v = Value::String("foo".into());
         assert_eq!(Some(&"foo".into()), v.as_string());
+
         let v = Value::Integer(1);
         assert_eq!(None, v.as_string());
     }
@@ -94,6 +91,7 @@ mod tests {
     fn as_boolean() {
         let v = Value::Boolean(true);
         assert_eq!(Some(true), v.as_boolean());
+
         let v = Value::Integer(1);
         assert_eq!(None, v.as_boolean());
     }
@@ -102,6 +100,7 @@ mod tests {
     fn as_integer() {
         let v = Value::Integer(1);
         assert_eq!(Some(1), v.as_integer());
+
         let v = Value::String("foo".into());
         assert_eq!(None, v.as_integer());
     }
@@ -110,6 +109,7 @@ mod tests {
     fn as_str() {
         let v = Value::String("foo".into());
         assert_eq!(Some("foo"), v.as_str());
+
         let v = Value::Integer(1);
         assert_eq!(None, v.as_str());
     }

@@ -1,18 +1,29 @@
 use crate::ion::Value;
 use crate::Row;
 
-pub trait FromRow: Sized {
+pub trait FromRow
+where
+    Self: Sized,
+{
     type Err;
-    fn from_str_iter<'a, I: Iterator<Item = &'a Value>>(row: I) -> Result<Self, Self::Err>;
+
+    fn from_str_iter<'a, I>(row: I) -> Result<Self, Self::Err>
+    where
+        I: Iterator<Item = &'a Value>;
 }
 
-pub trait ParseRow: Sized {
+pub trait ParseRow
+where
+    Self: Sized,
+{
     type Err;
+
     fn parse<F: FromRow>(&self) -> Result<F, F::Err>;
 }
 
 impl ParseRow for Row {
     type Err = ();
+
     fn parse<F: FromRow>(&self) -> Result<F, F::Err> {
         F::from_str_iter(self.iter())
     }
@@ -42,6 +53,7 @@ mod tests {
 
     impl FromRow for Foo {
         type Err = &'static str;
+
         fn from_str_iter<'a, I: Iterator<Item = &'a Value>>(mut row: I) -> Result<Self, Self::Err> {
             Ok(Foo {
                 foo: parse_next!(row, "foo"),
@@ -53,10 +65,12 @@ mod tests {
     #[test]
     fn from_row() {
         let row: Vec<_> = "1|foo"
-            .split("|")
+            .split('|')
             .map(|s| Value::String(s.to_owned()))
             .collect();
+
         let foo = Foo::from_str_iter(row.iter()).unwrap();
+
         assert_eq!(
             Foo {
                 foo: 1,

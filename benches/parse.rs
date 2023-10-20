@@ -1,6 +1,5 @@
 #![feature(test)]
 
-extern crate ion;
 extern crate test;
 
 use ion::{Ion, Parser};
@@ -103,8 +102,3 @@ mod parse_filtered {
         })
     }
 }
-
-//test parse::section_on_start_of_ion          ... bench:   4,187,092 ns/iter (+/- 125,166)
-//test parse::section_on_end_of_ion            ... bench:   4,223,583 ns/iter (+/- 155,651)
-//test parse_filtered::section_on_start_of_ion ... bench:      15,027 ns/iter (+/- 1,612)
-//test parse_filtered::section_on_end_of_ion   ... bench:     962,318 ns/iter (+/- 31,853)

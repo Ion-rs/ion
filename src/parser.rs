@@ -14,7 +14,7 @@ pub enum Element {
 pub struct Parser<'a> {
     input: &'a str,
     cur: Peekable<str::CharIndices<'a>>,
-    pub errors: Vec<ParserError>,
+    pub(crate) errors: Vec<ParserError>,
     accepted_sections: Option<Vec<&'a str>>,
     section_capacity: usize,
     row_capacity: usize,
@@ -26,8 +26,10 @@ impl<'a> Iterator for Parser<'a> {
 
     fn next(&mut self) -> Option<Element> {
         let mut is_section_accepted = true;
+
         loop {
             self.whitespace();
+
             if self.newline() {
                 continue;
             }
@@ -39,16 +41,19 @@ impl<'a> Iterator for Parser<'a> {
 
             if c == '[' {
                 let name = self.section_name();
+
                 match self.is_section_accepted(&name) {
                     Some(true) => return Some(Element::Section(name)),
                     Some(false) => is_section_accepted = false,
                     None => return None,
-                };
+                }
             }
+
             if !is_section_accepted {
                 self.skip_line();
                 continue;
             }
+
             return match c {
                 '|' => self.row(),
                 '#' => self.comment(),
@@ -59,11 +64,11 @@ impl<'a> Iterator for Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(s: &'a str) -> Parser<'a> {
+    pub fn new(s: &'a str) -> Self {
         Self::new_filtered_opt(s, None)
     }
 
-    pub fn new_filtered(s: &'a str, accepted_sections: Vec<&'a str>) -> Parser<'a> {
+    pub fn new_filtered(s: &'a str, accepted_sections: Vec<&'a str>) -> Self {
         Self::new_filtered_opt(s, Some(accepted_sections))
     }
 
@@ -82,8 +87,8 @@ impl<'a> Parser<'a> {
         self
     }
 
-    fn new_filtered_opt(s: &'a str, accepted_sections: Option<Vec<&'a str>>) -> Parser<'a> {
-        Parser {
+    fn new_filtered_opt(s: &'a str, accepted_sections: Option<Vec<&'a str>>) -> Self {
+        Self {
             input: s,
             cur: s.char_indices().peekable(),
             errors: Vec::new(),
@@ -129,7 +134,7 @@ impl<'a> Parser<'a> {
         }
 
         Some(Element::Comment(
-            self.slice_to_inc('\n').unwrap_or("").to_string(),
+            self.slice_to_including('\n').unwrap_or("").to_string(),
         ))
     }
 
@@ -146,6 +151,7 @@ impl<'a> Parser<'a> {
     fn section_name(&mut self) -> String {
         self.eat('[');
         self.whitespace();
+
         self.cur
             .by_ref()
             .map(|(_, c)| c)
@@ -158,10 +164,12 @@ impl<'a> Parser<'a> {
             if !self.keyval_sep() {
                 return None;
             }
+
             if let Some(val) = self.value() {
                 return Some(Element::Entry(key, val));
             }
         }
+
         None
     }
 
@@ -193,10 +201,12 @@ impl<'a> Parser<'a> {
 
     fn finish_array(&mut self) -> Option<Value> {
         self.cur.next();
+
         let mut row = Vec::with_capacity(self.array_capacity);
 
         loop {
             self.whitespace();
+
             if let Some((_, ch)) = self.cur.peek() {
                 match ch {
                     ']' => {
@@ -217,6 +227,7 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
+
         None
     }
 
@@ -226,6 +237,7 @@ impl<'a> Parser<'a> {
 
         loop {
             self.whitespace();
+
             if let Some((_, ch)) = self.cur.peek() {
                 match ch {
                     '}' => {
@@ -253,12 +265,14 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
+
         None
     }
 
     fn number(&mut self) -> Option<Value> {
         let mut is_float = false;
         let prefix = self.integer()?;
+
         let decimal = if self.eat('.') {
             is_float = true;
             Some(self.integer())?
@@ -266,8 +280,8 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let input = match decimal {
-            Some(ref decimal) => prefix + "." + decimal,
+        let input = match &decimal {
+            Some(decimal) => prefix + "." + decimal,
             None => prefix,
         };
 
@@ -290,11 +304,13 @@ impl<'a> Parser<'a> {
             for _ in 0..4 {
                 self.cur.next();
             }
+
             Some(Value::Boolean(true))
         } else if rest.starts_with("false") {
             for _ in 0..5 {
                 self.cur.next();
             }
+
             Some(Value::Boolean(false))
         } else {
             None
@@ -303,7 +319,8 @@ impl<'a> Parser<'a> {
 
     fn finish_string(&mut self) -> Option<Value> {
         self.cur.next();
-        self.slice_to_exc('"')
+
+        self.slice_to_excluding('"')
             .map(|s| {
                 s.replace("\\\\", "\\")
                     .replace("\\n", "\n")
@@ -314,9 +331,11 @@ impl<'a> Parser<'a> {
 
     fn keyval_sep(&mut self) -> bool {
         self.whitespace();
+
         if !self.expect('=') {
             return false;
         }
+
         self.whitespace();
         true
     }
@@ -327,16 +346,20 @@ impl<'a> Parser<'a> {
 
     fn row(&mut self) -> Option<Element> {
         let mut row = Vec::with_capacity(self.row_capacity);
+
         self.eat('|');
 
         loop {
             self.whitespace();
+
             if self.comment().is_some() {
                 break;
-            } // this will eat and NOT return comments within tables
+            }
+
             if self.newline() {
                 break;
             }
+
             if self.cur.peek().is_none() {
                 break;
             }
@@ -349,7 +372,8 @@ impl<'a> Parser<'a> {
 
     fn cell(&mut self) -> String {
         self.whitespace();
-        self.slice_to_exc('|')
+
+        self.slice_to_excluding('|')
             .map(str::trim_end)
             .unwrap_or_default()
             .replace("\\\\", "\\")
@@ -359,7 +383,6 @@ impl<'a> Parser<'a> {
 
     pub fn read(&mut self) -> Option<BTreeMap<String, Section>> {
         let mut map = BTreeMap::new();
-
         let mut section = Section::with_capacity(self.section_capacity);
         let mut name = None;
 
@@ -377,14 +400,18 @@ impl<'a> Parser<'a> {
                     section.dictionary.insert(key, value);
                 }
                 _ => continue,
-            };
+            }
         }
 
         match name {
-            Some(name) => map.insert(name, section),
-            None if self.accepted_sections.is_none() => map.insert("root".to_string(), section),
-            _ => None,
-        };
+            Some(name) => {
+                map.insert(name, section);
+            }
+            None if self.accepted_sections.is_none() => {
+                map.insert("root".to_string(), section);
+            }
+            _ => (),
+        }
 
         if !self.errors.is_empty() {
             None
@@ -394,13 +421,15 @@ impl<'a> Parser<'a> {
     }
 
     fn is_section_accepted(&mut self, name: &str) -> Option<bool> {
-        let sections = match self.accepted_sections {
-            Some(ref mut sections) => sections,
+        let sections = match &mut self.accepted_sections {
+            Some(sections) => sections,
             None => return Some(true),
         };
+
         if sections.is_empty() {
             return None;
         }
+
         match sections.iter().position(|s| *s == name) {
             Some(idx) => {
                 sections.swap_remove(idx);
@@ -410,13 +439,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // returns slice from the next character to `ch`, inclusive
-    // after this function, self.cur.next() returns the next character after `ch`
-    // None is only returned if the input is empty
-    // Examples:
-    // Parser::new("foObar").slice_to_inc('b') == Some("foOb"), self.cur.next() == (4, 'a')
-    // Parser::new("foObar").slice_to_inc('f') == Some("f"),    self.cur.next() == (1, 'o')
-    fn slice_to_inc(&mut self, ch: char) -> Option<&str> {
+    fn slice_to_including(&mut self, ch: char) -> Option<&str> {
         self.cur.next().map(|(start, c)| {
             if c == ch {
                 &self.input[start..=start]
@@ -428,37 +451,26 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // returns slice from the next character to `ch`
-    // the result is exclusive (does not contain `ch`), but the functions consumes `ch`
-    // when `ch` is preceded by `\` character, it ignores this occurence of `ch`
-    // None is returned when the input is empty or when `ch` is the next character
-    // Examples:
-    // Parser::new("foObar").slice_to_exc('b') == Some("foO"), self.cur.next() == (4, 'a')
-    // Parser::new("foObar").slice_to_exc('f') == None,        self.cur.next() == (1, 'o')
-    // Parser::new("fo\ObaOr").slice_to_exc('O') == Some("fo\Oba"), self.cur.next() == (7, 'r')
-    fn slice_to_exc(&mut self, ch: char) -> Option<&str> {
+    fn slice_to_excluding(&mut self, ch: char) -> Option<&str> {
         self.cur.next().map(|(start, c)| {
             if c == ch {
                 ""
             } else {
                 let mut prev_element = c;
+
                 for (i, cur_ch) in self.cur.by_ref() {
                     if cur_ch == ch && prev_element != '\\' {
                         return &self.input[start..i];
                     }
+
                     prev_element = cur_ch;
                 }
+
                 &self.input[start..]
             }
         })
     }
 
-    // returns slice from the next character to the last consecutive character matching the predicate
-    // the result is exclusive (does not contain `ch`) and does not consume `ch`
-    // None is returned when the input is empty or when `ch` is the next character
-    // Examples:
-    // Parser::new("foObar").slice_while(|c| c != 'b') == Some("foO"), self.cur.next() == (3, 'b')
-    // Parser::new("foObar").slice_while(|c| c != 'f') == None,        self.cur.next() == (0, 'f')
     fn slice_while(&mut self, predicate: impl Fn(char) -> bool) -> Option<&str> {
         self.cur.peek().cloned().and_then(|(start, c)| {
             if !predicate(c) {
@@ -494,11 +506,8 @@ impl<'a> Parser<'a> {
 
 #[derive(Clone, Debug)]
 pub struct ParserError {
-    /// The low byte at which this error is pointing at.
     pub lo: usize,
-    /// One byte beyond the last character at which this error is pointing at.
     pub hi: usize,
-    /// A human-readable description explaining what the error is.
     pub desc: String,
 }
 
@@ -586,26 +595,26 @@ mod tests {
     #[test]
     fn slice_to_inc() {
         let mut p = Parser::new("foObar");
-        assert_eq!(Some("foOb"), p.slice_to_inc('b'));
+        assert_eq!(Some("foOb"), p.slice_to_including('b'));
         assert_eq!(Some((4, 'a')), p.cur.next());
 
         let mut p = Parser::new("foObar");
-        assert_eq!(Some("f"), p.slice_to_inc('f'));
+        assert_eq!(Some("f"), p.slice_to_including('f'));
         assert_eq!(Some((1, 'o')), p.cur.next());
     }
 
     #[test]
     fn slice_to_exc() {
         let mut p = Parser::new("foObar");
-        assert_eq!(Some("foO"), p.slice_to_exc('b'));
+        assert_eq!(Some("foO"), p.slice_to_excluding('b'));
         assert_eq!(Some((4, 'a')), p.cur.next());
 
         let mut p = Parser::new("foObar");
-        assert_eq!(Some(""), p.slice_to_exc('f'));
+        assert_eq!(Some(""), p.slice_to_excluding('f'));
         assert_eq!(Some((1, 'o')), p.cur.next());
 
         let mut p = Parser::new("f\\oobar");
-        assert_eq!(Some("f\\o"), p.slice_to_exc('o'));
+        assert_eq!(Some("f\\o"), p.slice_to_excluding('o'));
         assert_eq!(Some((4, 'b')), p.cur.next());
     }
 
@@ -742,7 +751,7 @@ mod tests {
         assert_eq!(format!("{}", Value::Integer(1)), "1");
         assert_eq!(format!("{}", Value::Boolean(true)), "true");
         let ary = Value::Array(vec![Value::Integer(1), Value::String("foo".to_owned())]);
-        assert_eq!(format!("{}", ary), "[ 1, \"foo\" ]");
+        assert_eq!(format!("{ary}"), "[ 1, \"foo\" ]");
     }
 
     mod read {
@@ -950,12 +959,16 @@ mod tests {
                         let expected = {
                             let mut map = BTreeMap::new();
                             let mut section = Section::new();
+
                             section
                                 .dictionary
                                 .insert("key".to_owned(), Value::String("value".to_owned()));
-                            let mut row = Vec::new();
-                            row.push(Value::String("col1".to_owned()));
-                            row.push(Value::String("col2".to_owned()));
+
+                            let row = vec![
+                                Value::String("col1".to_owned()),
+                                Value::String("col2".to_owned()),
+                            ];
+
                             section.rows.push(row.clone());
                             section.rows.push(row.clone());
                             section.rows.push(row);

@@ -1,21 +1,10 @@
-#[cfg(test)]
-extern crate quickcheck;
-#[cfg(test)]
-#[macro_use(quickcheck)]
-extern crate quickcheck_macros;
-#[cfg(test)]
-extern crate regex;
-
-use std::collections::BTreeMap;
-
 #[macro_use]
 mod ion;
 mod parser;
-mod writer;
 
-pub use crate::ion::{FromIon, Ion, IonError, Section, Value};
-pub use parser::{Parser, ParserError};
-pub use writer::Writer;
+pub use self::ion::*;
+pub use self::parser::*;
+use std::collections::BTreeMap;
 
 pub type Dictionary = BTreeMap<String, Value>;
 pub type Row = Vec<Value>;
