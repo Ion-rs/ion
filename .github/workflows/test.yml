@@ -1,40 +1,16 @@
 name: Test
+on: [ push, pull_request ]
 
-on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master", "dev" ]
-    
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  validate:
-    name: Validate clippy and rustfmt
+  test:
+    name: Test
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v3
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-
-      - name: Check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --all-features
-
-      - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-features --tests -- -D warnings
-
-      - name: Fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -- --check
+      - uses: actions/checkout@v3
+      - uses: dsherret/rust-toolchain-file@v1
+      - run: cargo test --all-features
+      - run: cargo clippy --all-features --tests -- -D warnings
+      - run: cargo fmt -- --check
