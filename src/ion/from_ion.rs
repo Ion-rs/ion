@@ -1,12 +1,19 @@
-use ion::Value;
+use crate::ion::Value;
+use std::num::ParseIntError;
+use std::str::ParseBoolError;
 
-pub trait FromIon<T>: Sized {
+pub trait FromIon<T>
+where
+    Self: Sized,
+{
     type Err;
-    fn from_ion(&T) -> Result<Self, Self::Err>;
+
+    fn from_ion(_: &T) -> Result<Self, Self::Err>;
 }
 
 impl FromIon<Value> for String {
     type Err = ();
+
     fn from_ion(value: &Value) -> Result<Self, Self::Err> {
         value.as_string().map(|s| s.to_owned()).ok_or(())
     }
@@ -14,12 +21,16 @@ impl FromIon<Value> for String {
 
 impl FromIon<Value> for Option<String> {
     type Err = ();
+
     fn from_ion(value: &Value) -> Result<Self, Self::Err> {
-        value.as_string()
-            .map(|s| if s.is_empty() {
-                None
-            } else {
-                Some(s.to_owned())
+        value
+            .as_string()
+            .map(|s| {
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s.to_owned())
+                }
             })
             .ok_or(())
     }
@@ -28,7 +39,8 @@ impl FromIon<Value> for Option<String> {
 macro_rules! from_ion_value_int_impl {
      ($($t:ty)*) => {$(
          impl FromIon<Value> for $t {
-             type Err = ::std::num::ParseIntError;
+             type Err = ParseIntError;
+
              fn from_ion(value: &Value) -> Result<Self, Self::Err> {
                 match value.as_string() {
                     Some(s) => Ok(s.parse()?),
@@ -39,10 +51,11 @@ macro_rules! from_ion_value_int_impl {
      )*}
  }
 
-from_ion_value_int_impl!{ isize i8 i16 i32 i64 usize u8 u16 u32 u64 }
+from_ion_value_int_impl! { isize i8 i16 i32 i64 usize u8 u16 u32 u64 }
 
 impl FromIon<Value> for bool {
-    type Err = ::std::str::ParseBoolError;
+    type Err = ParseBoolError;
+
     fn from_ion(value: &Value) -> Result<Self, Self::Err> {
         match value.as_string() {
             Some(s) => Ok(s.parse()?),
@@ -53,14 +66,15 @@ impl FromIon<Value> for bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::ion::{FromIon, Section, Value};
     use std::str::FromStr;
-    use ion::{FromIon, Section, Value};
 
     #[test]
     fn string() {
         let v = Value::String("foo".to_owned());
         let s = String::from_ion(&v).unwrap();
         assert_eq!("foo", s);
+
         let s: String = v.from_ion().unwrap();
         assert_eq!("foo", s);
     }
@@ -87,16 +101,15 @@ mod tests {
     fn bool() {
         let v = Value::from_str("true").unwrap();
         let u: bool = v.from_ion().unwrap();
-        assert_eq!(true, u);
+        assert!(u);
 
         let v = Value::from_str("false").unwrap();
         let u: bool = v.from_ion().unwrap();
-        assert_eq!(false, u);
+        assert!(!u);
 
         let v = Value::from_str("").unwrap();
         let u: Result<bool, _> = v.from_ion();
         assert!(u.is_err());
-
     }
 
     struct Foo {
@@ -104,9 +117,9 @@ mod tests {
         b: String,
     }
 
-
     impl FromIon<Section> for Foo {
         type Err = ();
+
         fn from_ion(_section: &Section) -> Result<Self, Self::Err> {
             Ok(Foo {
                 a: 1,

@@ -1,10 +1,9 @@
 #![feature(test)]
 
-extern crate ion;
 extern crate test;
 
 use ion::{Ion, Parser};
-use test::{Bencher, black_box};
+use test::{black_box, Bencher};
 
 const DEF_HOTEL_ON_START: &str = include_str!("data/def_hotel_on_start.ion");
 const DEF_HOTEL_ON_END: &str = include_str!("data/def_hotel_on_end.ion");
@@ -103,9 +102,3 @@ mod parse_filtered {
         })
     }
 }
-
-
-//test parse::section_on_start_of_ion          ... bench:   4,187,092 ns/iter (+/- 125,166)
-//test parse::section_on_end_of_ion            ... bench:   4,223,583 ns/iter (+/- 155,651)
-//test parse_filtered::section_on_start_of_ion ... bench:      15,027 ns/iter (+/- 1,612)
-//test parse_filtered::section_on_end_of_ion   ... bench:     962,318 ns/iter (+/- 31,853)

@@ -1,7 +1,7 @@
 [dict]
 ary = [ "a", "b", 3 ]
 bool = true
-first = "first"
+first = "hello \\ hello \n hello \""
 second = "another"
 
 [mixed]
