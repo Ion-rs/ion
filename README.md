@@ -8,21 +8,37 @@
 [docs-badge]: https://img.shields.io/badge/docs.rs-latest-informational
 [docs-link]: https://docs.rs/ion
 
-Ion is a simple readable data format. It's designed to support `String, Integer (i64), Float(f64), Boolean, Arrays and Dictionary` data types.
-They can be organised in sections and every section can have different structure.
+# ion: Advanced Ion File Parser
 
-Parser for `*.ion` files:
+## Overview
 
-## Example
+`ion` is a sophisticated parser for `*.ion` files, crafted in Rust to handle a versatile data format. This format is ideal for configurations and structured data, supporting a diverse range of types like `String`, `Integer (i64)`, `Float (f64)`, `Boolean`, `Arrays`, and `Dictionary`.
 
-``` ini
+## Features
+
+- **Diverse Data Type Support**: Capable of parsing Strings, Integers, Floats, Booleans, Arrays, and Dictionaries.
+- **Section-based Organization**: Facilitates data organization in distinct sections with varied structures.
+- **Efficient Parsing**: Optimized for performance and reliability in parsing complex Ion documents.
+
+## Example Usage
+
+The following examples demonstrate the flexibility and structure of `*.ion` files:
+
+### Basic Section
+
+```ini
 [CONTRACT]
 id = "HOTEL001"
 name = "Hotel001"
 currency = "EUR"
 active = true
 markets = ["DE", "PL"]
+```
 
+
+### Table Format
+
+``` ini
 [DEF.MEAL]
 | code | description |
 |------|-------------|
@@ -35,7 +51,7 @@ markets = ["DE", "PL"]
 | DBL  | Double      | P2:3 A2:2 C0:1 |
 ```
 
-* A simple section with the `CONTRACT` name and few fields
+### Basic section with possible field types
 
 ```ini
 [CONTRACT]
@@ -48,19 +64,9 @@ markets = ["PL", "DE", "UK"]        // Array
 }
 ```
 
-* A simple section with the `RATE.PLAN` name and table structure
+### Complex document built from few sections
 
 ```ini
-[RATE.PLAN]
-|       dates       | code |  description   |    rooms    | rules |
-|-------------------|------|----------------|-------------|-------|
-| 20200512:20200514 | BAR  | Best available | SGL,DBL,APP |       |
-| 20200601:20200614 | BBV  | Best Bar View  | DBL,APP     |       |
-```
-
-* A complex document built from few sections
-
-```ion
 [CONTRACT]
 country = "Poland"
 markets = ["PL", "DE", "UK"]
@@ -72,6 +78,7 @@ markets = ["PL", "DE", "UK"]
 
 [RATE.PLAN]
 |       dates       | code |  description   |    rooms    | rules |
+|-------------------|------|----------------|-------------|-------|
 | 20200512:20200514 | BAR  | Best available | SGL,DBL,APP |       |
 | 20200601:20200614 | BBV  | Best Bar View  | DBL,APP     |       |
 
@@ -92,3 +99,5 @@ legend = {
 ## License
 
 Licensed under the MIT license.
+
+
