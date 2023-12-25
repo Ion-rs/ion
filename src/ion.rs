@@ -14,7 +14,7 @@ use crate::Parser;
 use std::collections::BTreeMap;
 use std::str;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Ion {
     sections: BTreeMap<String, Section>,
 }
