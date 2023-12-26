@@ -1,7 +1,7 @@
 use crate::{Dictionary, FromIon, IonError, Row};
 use std::str::FromStr;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     String(String),
     Integer(i64),
