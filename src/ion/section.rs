@@ -1,7 +1,7 @@
 use crate::{Dictionary, FromIon, IonError, Row, Value};
 use std::vec;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Section {
     pub dictionary: Dictionary,
     pub rows: Vec<Row>,
