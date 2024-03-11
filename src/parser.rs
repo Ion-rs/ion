@@ -321,12 +321,7 @@ impl<'a> Parser<'a> {
         self.cur.next();
 
         self.slice_to_excluding('"')
-            .map(|s| {
-                s.replace("\\\\", "\\")
-                    .replace("\\n", "\n")
-                    .replace("\\\"", "\"")
-            })
-            .map(Value::String)
+            .map(|s| Value::String(replace_escapes(s, true)))
     }
 
     fn keyval_sep(&mut self) -> bool {
@@ -373,12 +368,12 @@ impl<'a> Parser<'a> {
     fn cell(&mut self) -> String {
         self.whitespace();
 
-        self.slice_to_excluding('|')
-            .map(str::trim_end)
-            .unwrap_or_default()
-            .replace("\\\\", "\\")
-            .replace("\\n", "\n")
-            .replace("\\|", "|")
+        replace_escapes(
+            self.slice_to_excluding('|')
+                .map(str::trim_end)
+                .unwrap_or_default(),
+            false,
+        )
     }
 
     pub fn read(&mut self) -> Option<BTreeMap<String, Section>> {
@@ -521,6 +516,38 @@ impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
+}
+
+fn replace_escapes(s: &str, escape_quote: bool) -> String {
+    let mut result = String::new();
+    let mut escaping = false;
+    for c in s.chars() {
+        match (escaping, c) {
+            (false, '\\') => {
+                escaping = true;
+                continue;
+            }
+            (false, c) => result.push(c),
+
+            (true, 'n') => result.push('\n'),
+            (true, 't') => result.push('\t'),
+            (true, '\\' | '|') => result.push(c),
+            (true, '"') if escape_quote => result.push(c),
+            (true, c) => {
+                // When an unknown escape is encountered, print it as is e.g. \a -> \a
+                result.push('\\');
+                result.push(c);
+            }
+        }
+        escaping = false;
+    }
+
+    // handle '\\' as last char in sequence
+    if escaping {
+        result.push('\\');
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -749,6 +776,20 @@ mod tests {
     fn display() {
         let ary = Value::Array(vec![Value::Integer(1), Value::String("foo".to_owned())]);
         assert_eq!(format!("{ary:#}"), "[ 1, \"foo\" ]");
+    }
+
+    #[test]
+    fn replace_escapes() {
+        assert_eq!("a b", super::replace_escapes("a b", true));
+        assert_eq!("a b\\", super::replace_escapes(r"a b\", true));
+        assert_eq!("a\nb", super::replace_escapes(r"a\nb", true));
+        assert_eq!("a\tb", super::replace_escapes(r"a\tb", true));
+        assert_eq!("a\\b", super::replace_escapes(r"a\\b", true));
+        assert_eq!("a\\nb", super::replace_escapes(r"a\\nb", true));
+        assert_eq!("a|b", super::replace_escapes(r"a\|b", true));
+        assert_eq!("a\"b", super::replace_escapes("a\\\"b", true));
+        assert_eq!("a\\\"b", super::replace_escapes("a\\\"b", false));
+        assert_eq!("a\\n\\t\\\\b", super::replace_escapes(r"a\\n\\t\\\b", true));
     }
 
     mod read {
